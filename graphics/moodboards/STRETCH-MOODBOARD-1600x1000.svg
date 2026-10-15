@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <rect width="1600" height="1000" fill="#eee4d2"/>
+  <image href="../../assets/brand-mood/stretch-hero.jpg" x="560" y="58" width="970" height="884" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="560" y="58" width="970" height="884" fill="none" stroke="#d5c6af" stroke-width="2"/>
+  <g font-family="Arial,Helvetica,sans-serif" fill="#292824">
+    <text x="70" y="84" font-size="17" font-weight="700" letter-spacing="5">STRETCH OUT PULSE · 02</text>
+    <text x="66" y="276" font-family="Georgia,serif" font-size="132" font-style="italic" letter-spacing="-7">Stretch</text>
+    <text x="76" y="326" font-size="19" letter-spacing="7">ART OF MOTION</text>
+    <path d="M70 378c155 0 242 52 386 0" fill="none" stroke="#8f9278" stroke-width="3"/>
+    <text x="70" y="500" font-size="14" font-weight="700" letter-spacing="3" fill="#776c61">VISUAL LANGUAGE</text>
+    <text x="70" y="542" font-size="18">Graceful · tactile · restorative · precise</text>
+    <text x="70" y="624" font-size="14" font-weight="700" letter-spacing="3" fill="#776c61">TYPE</text>
+    <text x="70" y="676" font-family="Georgia,serif" font-size="46" font-style="italic">Editorial movement</text>
+    <text x="70" y="716" font-size="17" fill="#776c61">Script / high-contrast serif / quiet sans</text>
+  </g>
+  <g transform="translate(70 836)">
+    <rect width="82" height="66" fill="#eee4d2" stroke="#cabcaa"/><rect x="94" width="82" height="66" fill="#b8b7a0"/><rect x="188" width="82" height="66" fill="#8f9278"/><rect x="282" width="82" height="66" fill="#776c61"/><rect x="376" width="82" height="66" fill="#292824"/>
+    <g font-family="Arial" font-size="12" fill="#776c61"><text y="86">#EEE4D2</text><text x="94" y="86">#B8B7A0</text><text x="188" y="86">#8F9278</text><text x="282" y="86">#776C61</text><text x="376" y="86">#292824</text></g>
+  </g>
+</svg>

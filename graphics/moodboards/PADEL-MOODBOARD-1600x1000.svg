@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <rect width="1600" height="1000" fill="#0c0c0c"/>
+  <image href="../../assets/brand-mood/padel-hero.jpg" x="0" y="0" width="980" height="1000" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="0" y="0" width="980" height="1000" fill="#4d170d" opacity=".13"/>
+  <rect x="940" width="660" height="1000" fill="#a44b2c"/>
+  <g font-family="Arial,Helvetica,sans-serif" fill="#fff">
+    <text x="1010" y="84" font-size="17" font-weight="700" letter-spacing="5">PADEL AT PULSE · 03</text>
+    <text x="1008" y="238" font-family="Impact,Arial Narrow,sans-serif" font-size="102" letter-spacing="-2">OWN THE</text>
+    <text x="1008" y="335" font-family="Impact,Arial Narrow,sans-serif" font-size="102" letter-spacing="-2">COURT.</text>
+    <rect x="1010" y="378" width="168" height="11" fill="#d7ff32"/>
+    <text x="1010" y="496" font-size="14" font-weight="700" letter-spacing="3">VISUAL LANGUAGE</text>
+    <text x="1010" y="538" font-size="18">Urban · social · competitive</text>
+    <text x="1010" y="570" font-size="18">confident · energetic</text>
+    <text x="1010" y="656" font-size="14" font-weight="700" letter-spacing="3">TYPE</text>
+    <text x="1010" y="704" font-family="Impact,Arial Narrow,sans-serif" font-size="45">ATHLETIC CONDENSED</text>
+    <text x="1010" y="744" font-size="17" fill="#f4c1ae">Bold caps / sharp labels / motion crops</text>
+  </g>
+  <g transform="translate(1010 842)">
+    <rect width="82" height="62" fill="#0c0c0c"/><rect x="94" width="82" height="62" fill="#a44b2c"/><rect x="188" width="82" height="62" fill="#d86d42"/><rect x="282" width="82" height="62" fill="#d7ff32"/><rect x="376" width="82" height="62" fill="#f8f2e9"/>
+    <g font-family="Arial" font-size="12" fill="#fff"><text y="82">#0C0C0C</text><text x="94" y="82">#A44B2C</text><text x="188" y="82">#D86D42</text><text x="282" y="82">#D7FF32</text><text x="376" y="82">#F8F2E9</text></g>
+  </g>
+</svg>

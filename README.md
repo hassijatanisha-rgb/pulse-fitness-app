@@ -12,6 +12,14 @@ The interface is aligned to Pulse's public brand surfaces:
 
 The official Pulse wordmark and public photography are stored locally in `assets/` so the prototype does not depend on third-party image hosting.
 
+The October 2026 visual refresh adds three business-specific moodboards and a Powerhouse-inspired editorial layout system: large campaign imagery, condensed performance typography, compact navigation, strong section numbering, and restrained controls. It borrows the format and pacing—not Powerhouse branding or content.
+
+- Gym: carbon black, steel, electric blue, cinematic training imagery
+- Stretch: warm ivory, sage, stone, script/serif editorial typography
+- Padel: rust, black, white, acid-lime accents, competitive social imagery
+
+Editable moodboards and print-production notes are in `graphics/`. The print index includes a proposed production filename, dimensions, orientation, quantity, and material/placement note for every listed item.
+
 ## Included customer flows
 
 - Member sign-in demo and guest access

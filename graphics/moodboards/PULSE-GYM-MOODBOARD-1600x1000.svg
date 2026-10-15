@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs><linearGradient id="fade" x1="0" x2="1"><stop offset="0" stop-color="#060808"/><stop offset=".72" stop-color="#060808" stop-opacity=".25"/><stop offset="1" stop-color="#060808" stop-opacity="0"/></linearGradient></defs>
+  <rect width="1600" height="1000" fill="#070908"/>
+  <image href="../../assets/brand-mood/gym-hero.jpg" x="510" width="1090" height="1000" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="510" width="1090" height="1000" fill="url(#fade)"/>
+  <g font-family="Arial,Helvetica,sans-serif" fill="#fff">
+    <text x="70" y="82" font-size="18" font-weight="700" letter-spacing="5">PULSE GYMNASIUM · 01</text>
+    <path d="M70 120h360" stroke="#1677ff" stroke-width="6"/>
+    <text x="70" y="260" font-family="Impact,Arial Narrow,sans-serif" font-size="116" letter-spacing="-3">PERFORM.</text>
+    <text x="70" y="360" font-family="Impact,Arial Narrow,sans-serif" font-size="116" letter-spacing="-3">PROGRESS.</text>
+    <text x="72" y="428" font-size="20" fill="#aeb8c4">Precision training with an electric edge.</text>
+    <text x="70" y="590" font-size="14" font-weight="700" letter-spacing="3" fill="#7cb8ff">VISUAL LANGUAGE</text>
+    <text x="70" y="632" font-size="18">Cinematic · disciplined · technical · elite</text>
+    <text x="70" y="708" font-size="14" font-weight="700" letter-spacing="3" fill="#7cb8ff">TYPE</text>
+    <text x="70" y="752" font-family="Impact,Arial Narrow,sans-serif" font-size="42">CONDENSED PERFORMANCE</text>
+    <text x="70" y="790" font-size="17" fill="#9da9b8">Oswald / clean system sans / compact labels</text>
+  </g>
+  <g transform="translate(70 866)">
+    <rect width="92" height="64" fill="#070908" stroke="#2a2f31"/><rect x="104" width="92" height="64" fill="#111821"/><rect x="208" width="92" height="64" fill="#1677ff"/><rect x="312" width="92" height="64" fill="#9da9b8"/><rect x="416" width="92" height="64" fill="#f4f7fb"/>
+    <g font-family="Arial" font-size="12" fill="#fff"><text y="84">#070908</text><text x="104" y="84">#111821</text><text x="208" y="84">#1677FF</text><text x="312" y="84">#9DA9B8</text><text x="416" y="84" fill="#9da9b8">#F4F7FB</text></g>
+  </g>
+</svg>

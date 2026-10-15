@@ -1,0 +1,47 @@
+{
+  "contract": "Apply the Pulse Gym, Stretch Out Pulse, and Padel Up Pulse moodboards as a cohesive premium editorial club interface while preserving the complete booking application.",
+  "targetViewports": [
+    "1440x1000 desktop"
+  ],
+  "renderedEvidence": [
+    {
+      "viewport": "1440x1000 desktop",
+      "artifact": "desktop-brand-home.png",
+      "observation": "The member home renders the cinematic gym hero, editorial typography, numbered service system, upcoming bookings, membership status, and restrained navigation without visible overflow."
+    }
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Chrome Lighthouse mobile navigation audit scored Accessibility 100 with all audited checks passing."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "The mobile navigation audit completed at the emulated mobile viewport with Accessibility, Best Practices, SEO, and Agentic Browsing all scoring 100; the responsive card and navigation layouts remained usable."
+  },
+  "contentStates": {
+    "loading": {
+      "status": "not-applicable",
+      "reason": "The static shell initializes synchronously and the optional remote configuration poll does not block the interface."
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "The application retains its explicit empty-list copy for accounts without upcoming reservations."
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "Slow Google Apps Script JSONP responses now resolve to a silent fallback without uncaught console errors."
+    },
+    "partial": {
+      "status": "not-applicable",
+      "reason": "Service modules are rendered independently and do not expose a distinct partial-result screen."
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "The populated member state rendered booking confirmations, membership status, and all three service entry points."
+    },
+    "permission": {
+      "status": "not-applicable",
+      "reason": "The reviewed member route does not request browser-level permissions."
+    }
+  }
+}

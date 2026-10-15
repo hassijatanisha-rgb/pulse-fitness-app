@@ -35,7 +35,17 @@ function loadPublicState() {
   return new Promise(resolve=>{
     const callback=`pulsePublicState_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const script=document.createElement("script");
-    const finish=value=>{ delete window[callback]; script.remove(); resolve(value || null); };
+    let settled=false;
+    const finish=value=>{
+      if(settled) return;
+      settled=true;
+      // A slow Apps Script response may still execute after our timeout. Keep a
+      // temporary no-op callback so that late JSONP never raises a page error.
+      window[callback]=()=>{};
+      script.remove();
+      setTimeout(()=>delete window[callback],60000);
+      resolve(value || null);
+    };
     const timer=setTimeout(()=>finish(null),12000);
     window[callback]=payload=>{
       clearTimeout(timer);
@@ -301,14 +311,22 @@ function customerView() {
 function homeView() {
   const next = state.bookings.filter(b => !["Cancelled","No-show"].includes(b.status)).slice(-3).reverse();
   return `<main class="page">
-    <section class="welcome-strip">
-      <div><div class="eyebrow">${state.session?.type === "member" ? "Member home" : "Guest access"}</div><h1>${state.session?.type === "member" ? "Good morning, Tanisha." : "Your next move starts here."}</h1><p>Choose a service or pick up where you left off.</p></div>
-      <span class="pill"><span class="dot"></span> Pulse Masaki · Open until 22:00</span>
+    <section class="home-stage">
+      <div class="home-stage-copy">
+        <div class="eyebrow">Pulse · Masaki, Dar es Salaam</div>
+        <h1>${state.session?.type === "member" ? "Good morning, Tanisha." : "Move with purpose."}</h1>
+        <p>Three focused experiences. One refined club. Book training, movement, and play without breaking your flow.</p>
+      </div>
+      <div class="home-stage-meta">
+        <span class="pill"><span class="dot"></span> Open today until 22:00</span>
+        <span class="stage-index">01 / 03</span>
+      </div>
     </section>
+    <div class="section-rule"><span>Choose your experience</span><span>Pulse all-in-one club</span></div>
     <section class="service-grid" aria-label="Pulse services">
-      ${serviceCard("gym","Gym at Pulse","Classes, day passes and personal training.")}
-      ${serviceCard("stretch","Stretch Out Pulse","Pilates Reformer and premium mat classes.")}
-      ${serviceCard("padel","Padel Up Pulse","Reserve courts, join open matches, and play.")}
+      ${serviceCard("gym","Gym at Pulse","Classes, day passes and personal training.","01","Performance")}
+      ${serviceCard("stretch","Stretch Out Pulse","Pilates Reformer and premium mat classes.","02","Art of motion")}
+      ${serviceCard("padel","Padel Up Pulse","Reserve courts, join open matches, and play.","03","Play · connect")}
     </section>
     <section class="quick-grid">
       <div class="panel"><div class="panel-head"><div><h3>Upcoming bookings</h3><span class="panel-sub">Confirmation emails are ready at check-in.</span></div><button class="btn btn-ghost btn-sm" data-action="view-bookings">View all</button></div>
@@ -321,9 +339,9 @@ function homeView() {
   </main>`;
 }
 
-function serviceCard(route, title, desc) {
+function serviceCard(route, title, desc, index, label) {
   return `<button class="service-card ${route}" data-route="${route}">
-    ${route === "padel" ? `<img class="padel-lockup" src="assets/padel-logo.png" alt="Padel at Pulse">` : `<span class="pill" style="width:max-content;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:white">Explore</span>`}
+    <div class="service-card-top"><span class="service-index">${index}</span><span class="service-label">${label}</span></div>
     <div><h2>${title}</h2><p>${desc}</p></div><span class="arrow">${icons.arrow}</span>
   </button>`;
 }
@@ -334,7 +352,8 @@ function bookingMini(b) {
 }
 
 function categoryHero(kind, kicker, title, body) {
-  return `<section class="category-hero ${kind}"><div>${kind === "padel" ? `<img class="padel-lockup hero-lockup" src="assets/padel-logo.png" alt="Padel at Pulse">` : ""}<div class="eyebrow">${kicker}</div><h1>${title}</h1><p>${body}</p></div></section>`;
+  const number = kind === "gym" ? "01" : kind === "stretch" ? "02" : "03";
+  return `<section class="category-hero ${kind}"><div class="category-number">${number}</div><div>${kind === "padel" ? `<img class="padel-lockup hero-lockup" src="assets/padel-logo.png" alt="Padel at Pulse">` : ""}<div class="eyebrow">${kicker}</div><h1>${title}</h1><p>${body}</p></div><span class="hero-scroll">Explore the club ↓</span></section>`;
 }
 
 const stretchSlots = [["08:00","Reformer Foundations","8 spots"],["10:00","Reformer Sculpt","5 spots"],["17:00","Premium Mat Pilates","8 spots"],["18:30","Reformer Flow","7 spots"]];
