@@ -4,6 +4,54 @@ const icons = {
 };
 
 const emailEndpoint = String(window.PULSE_CONFIG?.bookingEmailEndpoint || "").trim();
+const backendEndpoint = emailEndpoint;
+let adminRefreshTimer = null;
+
+function backendPost(fields, timeoutMs=20000) {
+  if (!backendEndpoint) return Promise.reject(new Error("Pulse cloud service is not configured."));
+  return new Promise((resolve,reject)=>{
+    const requestId=`pulse-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const frame=document.createElement("iframe"), form=document.createElement("form");
+    const cleanup=()=>{ window.removeEventListener("message",onMessage); clearTimeout(timer); form.remove(); setTimeout(()=>frame.remove(),0); };
+    const onMessage=event=>{
+      const data=event.data;
+      if(!data || data.source!=="pulse-backend" || data.requestId!==requestId) return;
+      cleanup(); resolve(data);
+    };
+    const timer=setTimeout(()=>{ cleanup(); reject(new Error("Pulse cloud service did not respond. Try again.")); },timeoutMs);
+    frame.name=`pulse-backend-${requestId}`;
+    // Apps Script renders a sandboxed child frame. Keep the transport frame
+    // mounted (but visually inert) so browsers execute that response bridge.
+    Object.assign(frame.style,{position:"fixed",width:"1px",height:"1px",opacity:"0",pointerEvents:"none",border:"0",left:"-9999px",top:"0"});
+    frame.setAttribute("aria-hidden","true"); frame.tabIndex=-1;
+    form.method="POST"; form.action=backendEndpoint; form.target=frame.name; form.hidden=true;
+    Object.entries({...fields,requestId}).forEach(([name,value])=>{ const input=document.createElement("input"); input.type="hidden"; input.name=name; input.value=String(value ?? ""); form.append(input); });
+    window.addEventListener("message",onMessage); document.body.append(frame,form); form.submit();
+  });
+}
+
+function loadPublicState() {
+  if(!backendEndpoint) return Promise.resolve(null);
+  return new Promise(resolve=>{
+    const callback=`pulsePublicState_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script=document.createElement("script");
+    const finish=value=>{ delete window[callback]; script.remove(); resolve(value || null); };
+    const timer=setTimeout(()=>finish(null),12000);
+    window[callback]=payload=>{
+      clearTimeout(timer);
+      if(payload?.ok) {
+        state.businessSettings={...state.businessSettings,...payload.settings};
+        if(Array.isArray(payload.gymSchedule) && payload.gymSchedule.length) state.gymSchedule=payload.gymSchedule;
+        state.remoteBusyPadel=Array.isArray(payload.busyPadel)?payload.busyPadel:[];
+        saveState(); render();
+      }
+      finish(payload);
+    };
+    script.onerror=()=>{ clearTimeout(timer); finish(null); };
+    script.src=`${backendEndpoint}?action=public-state&callback=${encodeURIComponent(callback)}&v=${Date.now()}`;
+    document.head.append(script);
+  });
+}
 
 const defaultBusinessSettings = Object.freeze({
   padelCourtPrice:Number(window.PULSE_CONFIG?.businessDefaults?.padelCourtPrice || 40000),
@@ -92,6 +140,8 @@ const defaultState = {
   activities: seed.activities,
   gymSchedule: seed.gymSchedule,
   businessSettings: { ...defaultBusinessSettings },
+  remoteBusyPadel: [],
+  adminToken: "",
   modal: null,
   bookingDraft: null,
   filters: "All",
@@ -119,6 +169,8 @@ function loadState() {
     const saved = JSON.parse(localStorage.getItem("pulse-demo-state"));
     const loaded = { ...defaultState, ...(saved || {}), modal:null, bookingDraft:null };
     loaded.businessSettings = { ...defaultBusinessSettings, ...(saved?.businessSettings || {}) };
+    loaded.remoteBusyPadel = Array.isArray(saved?.remoteBusyPadel) ? saved.remoteBusyPadel : [];
+    loaded.adminToken = "";
     loaded.gymSchedule = Array.isArray(saved?.gymSchedule) && saved.gymSchedule.length ? saved.gymSchedule : structuredClone(seed.gymSchedule);
     const preview = new URLSearchParams(location.search).get("view");
     if (preview === "admin") loaded.session = null;
@@ -130,7 +182,7 @@ function loadState() {
 }
 
 function saveState() {
-  const safe = { ...state, modal:null, bookingDraft:null };
+  const safe = { ...state, modal:null, bookingDraft:null, adminToken:"", session:state.session?.type==="admin"?null:state.session };
   localStorage.setItem("pulse-demo-state", JSON.stringify(safe));
 }
 
@@ -140,6 +192,10 @@ function uid(prefix="PLS") {
   const records = prefix === "TR" ? state.trainerRequests : prefix === "BD" ? state.buddyRequests : state.bookings;
   const floor = prefix === "PLS" ? 2400 : 100;
   const highest = records.reduce((max,item)=>Math.max(max,Number(String(item.id || "").split("-").pop()) || 0),floor);
+  if(prefix==="PLS") {
+    const stamp=String(Date.now()).slice(-10), random=String(crypto.getRandomValues(new Uint16Array(1))[0]).padStart(5,"0");
+    return `PLS-${stamp}${random}`;
+  }
   return `${prefix}-${highest + 1}`;
 }
 function escapeHTML(value="") { return String(value).replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
@@ -167,7 +223,8 @@ function padelSlotsForDate(date) {
 function courtIsBooked(service,date,time,ignoreId="",duration=state.businessSettings.padelDurationMinutes) {
   const court=courtNumber(service);
   const start=timeToMinutes(time), end=start+Number(duration || 90);
-  return Boolean(court && state.bookings.some(b=>{
+  const records=[...state.bookings,...(state.remoteBusyPadel || [])];
+  return Boolean(court && records.some(b=>{
     if(b.id===ignoreId || b.category!=="Padel" || !activeBooking(b) || courtNumber(b.service)!==court || b.date!==date) return false;
     const bookedStart=timeToMinutes(b.time), bookedEnd=bookedStart+Number(b.durationMinutes || 90);
     return start < bookedEnd && bookedStart < end;
@@ -345,7 +402,7 @@ function signInModal() {
 }
 
 function adminSignInModal() {
-  return modalShell("Admin portal", `<form id="admin-signin-form"><div class="form-grid"><div class="field full"><label for="admin-email">Admin email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="admin@admin.com"></div><div class="field full"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Password"></div></div><p id="admin-login-error" class="form-error" role="alert"></p><div class="form-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button><button class="btn btn-primary">Sign in to admin</button></div><p class="fine-print">Demo portal access. Production authentication will be moved to a secure server before launch.</p></form>`);
+  return modalShell("Admin portal", `<form id="admin-signin-form"><div class="form-grid"><div class="field full"><label for="admin-email">Admin email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="admin@admin.com"></div><div class="field full"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Password"></div></div><p id="admin-login-error" class="form-error" role="alert"></p><div class="form-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button><button class="btn btn-primary">Sign in to admin</button></div><p class="fine-print">Credentials are verified by the private Pulse Google service. Passwords are never stored in this website.</p></form>`);
 }
 
 function bookingModal(draft = {}) {
@@ -364,12 +421,15 @@ function bookingModal(draft = {}) {
     : d.category === "Stretch"
       ? [d.service]
       : [d.service];
+  const bookingTimes=d.category==="Padel"
+    ? [...new Set(padelSlotsForDate(d.date).filter(slot=>!courtIsBooked(courtNumber(d.service)?d.service:"Court 1",d.date,slot[0],"",d.durationMinutes)).map(slot=>slot[0]))]
+    : [d.time,"08:00","10:00","12:30","17:00","18:00","19:00"].filter((v,i,a)=>a.indexOf(v)===i);
   const padelSummary=d.category==="Padel"?`<div class="summary-row"><span>Court time</span><strong>${durationLabel(d.durationMinutes)}</strong></div><div class="summary-row"><span>Four-player split (25%)</span><strong>${money(d.amount/4)} each</strong></div>`:"";
   return modalShell("Make a booking", `<div class="steps"><span class="step on"></span><span class="step on"></span><span class="step"></span></div>
     <form id="booking-form"><div class="form-grid">
       <div class="field"><label>Service</label><select name="service">${services.filter((v,i,a)=>a.indexOf(v)===i).map(v=>`<option value="${escapeHTML(v)}">${escapeHTML(v)}</option>`).join("")}</select></div>
       <div class="field"><label>Date</label><input name="date" type="date" value="${d.date}" min="2026-10-15" required></div>
-      <div class="field"><label>Time</label><select name="time">${[d.time,"08:00","10:00","12:30","17:00","18:00","19:00"].filter((v,i,a)=>a.indexOf(v)===i).map(v=>`<option>${v}</option>`).join("")}</select></div>
+      <div class="field"><label>Time</label><select name="time">${bookingTimes.map(v=>`<option ${v===d.time?"selected":""}>${v}</option>`).join("")}</select></div>
       <div class="field"><label>Full name</label><input name="name" value="${state.session?.type === "member" ? "Tanisha Hassija" : ""}" required placeholder="Your name"></div>
       <div class="field"><label>Email</label><input name="email" type="email" value="${state.session?.type === "member" ? "member@pulse.co.tz" : ""}" required placeholder="you@example.com"></div>
       <div class="field"><label>Phone number</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div>
@@ -546,7 +606,7 @@ function deleteGymClassModal(item) {
 }
 
 function settingsAdmin(route) {
-  if (route === "integrations") return `<header class="admin-top"><div><h1>Integrations</h1><p>Connection points are prepared for production credentials.</p></div></header><section class="admin-grid"><div class="admin-panel"><div class="panel-head"><h2>Services</h2></div>${integration("SELCOM","Selcom payments","Checkout, webhooks and automated refunds","Sandbox ready")}${integration("OK","OkayFit","Memberships, classes and member authentication","Awaiting API")}${integration("MAIL","Email","Booking codes, updates and cancellations","Demo mode")}${integration("PUSH","Push notifications","Booking and trainer updates","Frontend ready")}</div><div class="admin-panel"><h2>Integration checklist</h2><div class="activity"><span class="activity-mark"></span><div><p>Selcom adapter defined</p><time>Needs merchant keys</time></div></div><div class="activity"><span class="activity-mark" style="background:var(--stretch)"></span><div><p>OkayFit data mapping prepared</p><time>Needs API documentation</time></div></div><div class="activity"><span class="activity-mark" style="background:var(--pulse-dark)"></span><div><p>Email templates designed</p><time>Needs sending provider</time></div></div></div></section>`;
+  if (route === "integrations") return `<header class="admin-top"><div><h1>Integrations</h1><p>Live service status for this deployment.</p></div></header><section class="admin-grid"><div class="admin-panel"><div class="panel-head"><h2>Services</h2></div>${integration("SELCOM","Selcom payments","Checkout, webhooks and automated refunds","Credentials required")}${integration("OK","OkayFit","Memberships, classes and member authentication","Credentials required")}${integration("MAIL","Email & shared data","Google Sheet reservations and confirmation emails","Connected")}${integration("PUSH","Push notifications","Booking and trainer updates","Not connected")}</div><div class="admin-panel"><h2>Integration checklist</h2><div class="activity"><span class="activity-mark"></span><div><p>Google booking service connected</p><time>Atomic reservations, shared admin data, and email are active</time></div></div><div class="activity"><span class="activity-mark" style="background:var(--stretch)"></span><div><p>Selcom adapter prepared</p><time>Needs merchant keys and webhook approval</time></div></div><div class="activity"><span class="activity-mark" style="background:var(--pulse-dark)"></span><div><p>OkayFit mapping prepared</p><time>Needs partner documentation and API credentials</time></div></div></div></section>`;
   if (route === "payments") {
     const revenue = state.bookings.filter(b=>b.paymentStatus==="Paid").reduce((s,b)=>s+b.amount,0);
     return `<header class="admin-top"><div><h1>Payments</h1><p>Selcom payments, refunds, and amounts due.</p></div></header><section class="metric-grid">${metric("Collected",money(revenue),"Confirmed payments")}${metric("Refunded",money(state.bookings.filter(b=>b.paymentStatus==="Refunded").reduce((s,b)=>s+b.amount,0)),"Pulse cancellations")}${metric("Pay at reception",state.bookings.filter(b=>b.paymentStatus==="Due").length,"Open balances")}${metric("No-show fees",state.bookings.filter(b=>b.paymentStatus==="No-show fee due").length,"Booking blocked")}</section><section class="admin-panel" style="margin-top:16px">${bookingTable(state.bookings)}</section>`;
@@ -583,6 +643,16 @@ function bindEvents() {
   document.getElementById("signin-form")?.addEventListener("submit", e => { e.preventDefault(); setState({session:{type:"member"},route:"home",modal:null}); toast("Welcome back", "Your Pulse membership is active."); });
   document.getElementById("admin-signin-form")?.addEventListener("submit", adminSignInSubmit);
   document.getElementById("booking-form")?.addEventListener("submit", bookingSubmit);
+  const bookingForm=document.getElementById("booking-form");
+  if(bookingForm && state.bookingDraft?.category==="Padel") {
+    const refreshPadelTimes=()=>{
+      const date=bookingForm.elements.date.value, service=bookingForm.elements.service.value;
+      const times=[...new Set(padelSlotsForDate(date).filter(slot=>slot[1]===service&&!courtIsBooked(service,date,slot[0],"",state.bookingDraft.durationMinutes)).map(slot=>slot[0]))];
+      bookingForm.elements.time.innerHTML=times.map(time=>`<option>${time}</option>`).join("");
+    };
+    bookingForm.elements.date.addEventListener("change",refreshPadelTimes);
+    bookingForm.elements.service.addEventListener("change",refreshPadelTimes);
+  }
   document.getElementById("payment-form")?.addEventListener("submit", paymentSubmit);
   document.getElementById("trainer-form")?.addEventListener("submit", trainerSubmit);
   document.getElementById("manage-booking-form")?.addEventListener("submit", manageBookingSubmit);
@@ -595,7 +665,7 @@ function bindEvents() {
   document.querySelector(".modal-backdrop")?.addEventListener("click", e => { if(e.target.classList.contains("modal-backdrop")) setState({modal:null},false); });
 }
 
-function handleAction(action, el, e) {
+async function handleAction(action, el, e) {
   if (e) e.preventDefault();
   const data = el?.dataset || {};
   const info = {
@@ -610,7 +680,7 @@ function handleAction(action, el, e) {
   if (action === "profile") return setState({modal:{type:"profile"}},false);
   if (action === "signout") return setState({...defaultState,bookings:state.bookings,trainerRequests:state.trainerRequests,buddyRequests:state.buddyRequests,padelRankings:state.padelRankings,padelMatches:state.padelMatches,padelEvents:state.padelEvents,padelPromotions:state.padelPromotions,claimedPromotions:state.claimedPromotions,padelFriends:state.padelFriends,activities:state.activities,gymSchedule:state.gymSchedule,businessSettings:state.businessSettings});
   if (action === "open-admin") return setState({adminReturn:state.session?.type || "guest",modal:{type:"admin-signin"}},false);
-  if (action === "exit-admin") return setState({session:{type:state.adminReturn || "guest"},route:"home",modal:null});
+  if (action === "exit-admin") { if(adminRefreshTimer) clearInterval(adminRefreshTimer); state.adminToken=""; return setState({session:{type:state.adminReturn || "guest"},route:"home",modal:null}); }
   if (action === "book") return setState({modal:{type:"booking",data:{category:data.category,service:data.service,time:data.time,date:data.date,classId:data.classId || "",amount:Number(data.amount)||undefined,durationMinutes:Number(data.duration)||undefined}}},false);
   if (action === "quick-book" || action === "admin-new-booking") return setState({modal:{type:"booking",data:{}}},false);
   if (action === "renew") return setState({modal:{type:"booking",data:{category:"Gym",service:"Pulse Unlimited membership renewal",amount:180000}}},false);
@@ -631,6 +701,10 @@ function handleAction(action, el, e) {
   if (action === "delete-gym-class") return setState({modal:{type:"delete-gym-class",data:{id:data.id}}},false);
   if (action === "confirm-delete-gym-class") {
     const item=state.gymSchedule.find(entry=>entry.id===data.id);
+    try {
+      const result=await backendPost({action:"admin-delete-class",token:state.adminToken,id:data.id});
+      if(!result.ok) throw new Error(result.error || "Class was not deleted.");
+    } catch(error) { return toast("Class not deleted",String(error.message || error)); }
     state.gymSchedule=state.gymSchedule.filter(entry=>entry.id!==data.id);
     state.activities=[{text:`Gym class removed: ${item?.name || data.id}`,time:"Just now"},...state.activities];
     state.modal=null; saveState(); render(); return toast("Class deleted","It has been removed from customer booking.");
@@ -666,11 +740,15 @@ function bookingSubmit(e) {
   else setState({modal:{type:"payment",data:draft}},false);
 }
 
-function businessSettingsSubmit(e) {
+async function businessSettingsSubmit(e) {
   e.preventDefault();
   const fields=Object.fromEntries(new FormData(e.target).entries());
   try {
-    PulseConfigController.update({padelCourtPrice:Number(fields.padelCourtPrice),padelDurationMinutes:Number(fields.padelDurationMinutes)});
+    const next={padelCourtPrice:Number(fields.padelCourtPrice),padelDurationMinutes:Number(fields.padelDurationMinutes)};
+    PulseConfigController.update(next);
+    const result=await backendPost({action:"admin-update-settings",token:state.adminToken,...next});
+    if(!result.ok) throw new Error(result.error || "Settings were not saved.");
+    state.businessSettings={...state.businessSettings,...result.settings};
   } catch(error) {
     return toast("Settings not saved",String(error.message || error));
   }
@@ -678,10 +756,14 @@ function businessSettingsSubmit(e) {
   saveState(); render(); toast("Court settings saved","The calendar was rebuilt. Existing reservations kept their original terms.");
 }
 
-function gymClassSubmit(e) {
+async function gymClassSubmit(e) {
   e.preventDefault();
   const form=new FormData(e.target), fields=Object.fromEntries(form.entries());
   const record={id:fields.id || `GC-${Date.now().toString().slice(-6)}`,name:String(fields.name).trim(),date:fields.date,time:fields.time,endTime:fields.endTime,trainer:String(fields.trainer).trim(),capacity:Number(fields.capacity),price:Number(fields.price),active:form.has("active")};
+  try {
+    const result=await backendPost({action:"admin-save-class",token:state.adminToken,...record});
+    if(!result.ok) throw new Error(result.error || "Class was not saved.");
+  } catch(error) { return toast("Class not saved",String(error.message || error)); }
   const index=state.gymSchedule.findIndex(item=>item.id===record.id);
   if(index>=0) state.gymSchedule[index]=record; else state.gymSchedule=[...state.gymSchedule,record];
   state.activities=[{text:`Gym schedule updated: ${record.name} on ${prettyDate(record.date)}`,time:"Just now"},...state.activities];
@@ -692,13 +774,34 @@ async function adminSignInSubmit(e) {
   e.preventDefault();
   const fields=Object.fromEntries(new FormData(e.target).entries());
   const passwordHash=await sha256(fields.password);
-  if (String(fields.email).trim().toLowerCase() !== String(window.PULSE_CONFIG?.adminEmail || "").toLowerCase() || passwordHash !== window.PULSE_CONFIG?.adminPasswordSha256) {
+  let result;
+  try { result=await backendPost({action:"admin-login",email:String(fields.email).trim(),passwordHash}); }
+  catch(error) { result={ok:false,error:String(error.message || error)}; }
+  if (!result.ok) {
     const error=document.getElementById("admin-login-error");
-    if(error) error.textContent="Incorrect email or password.";
+    if(error) error.textContent=result.error || "Incorrect email or password.";
     return;
   }
-  setState({session:{type:"admin"},modal:null,adminRoute:"overview"});
-  toast("Admin portal opened",`Signed in as ${window.PULSE_CONFIG.adminEmail}.`);
+  state.adminToken=result.token;
+  setState({session:{type:"admin"},modal:null,adminRoute:"overview"},false);
+  await syncAdminData(true);
+  if(adminRefreshTimer) clearInterval(adminRefreshTimer);
+  adminRefreshTimer=setInterval(()=>{ if(state.session?.type==="admin") syncAdminData(false); },15000);
+  toast("Admin portal opened",`Signed in as ${result.email}. Shared bookings are connected.`);
+}
+
+async function syncAdminData(showError=false) {
+  if(!state.adminToken) return;
+  try {
+    const result=await backendPost({action:"admin-list",token:state.adminToken});
+    if(!result.ok) throw new Error(result.error || "Could not refresh admin data.");
+    const merged=new Map(state.bookings.map(item=>[item.id,item]));
+    (result.bookings || []).forEach(item=>merged.set(item.id,item));
+    state.bookings=[...merged.values()];
+    state.businessSettings={...state.businessSettings,...result.settings};
+    if(Array.isArray(result.gymSchedule) && result.gymSchedule.length) state.gymSchedule=result.gymSchedule;
+    render();
+  } catch(error) { if(showError) toast("Shared data unavailable",String(error.message || error)); }
 }
 
 function paymentSubmit(e) {
@@ -708,49 +811,26 @@ function paymentSubmit(e) {
   finalizeBooking(true);
 }
 
-function finalizeBooking(paid) {
+async function finalizeBooking(paid) {
   const d = state.bookingDraft;
   if (d.category === "Padel" && courtIsBooked(d.service,d.date,d.time,"",d.durationMinutes)) {
     return setState({modal:{type:"booking",data:{...d,error:"That court is no longer available. No payment was taken."}}},false);
   }
-  const booking = { id:uid(), service:d.service, category:d.category || "Gym", classId:d.classId || "", date:d.date, time:d.time, durationMinutes:d.category==="Padel"?Number(d.durationMinutes || state.businessSettings.padelDurationMinutes):null, name:d.name, email:d.email, phone:d.phone, payment:paid?"Paid in app":"Pay on arrival", paymentMethod:paid?(d.paymentMethod || "Mobile money"):"Reception", amount:Number(d.amount), status:"Confirmed", paymentStatus:paid?"Paid":"Due", emailDelivery:emailEndpoint?"sending":"not-configured" };
+  const booking = { id:uid(), service:d.service, category:d.category || "Gym", classId:d.classId || "", date:d.date, time:d.time, durationMinutes:d.category==="Padel"?Number(d.durationMinutes || state.businessSettings.padelDurationMinutes):null, name:d.name, email:d.email, phone:d.phone, payment:paid?"Paid in app demo":"Pay on arrival", paymentMethod:paid?(d.paymentMethod || "Mobile money demo"):"Reception", amount:Number(d.amount), status:"Confirmed", paymentStatus:paid?"Paid (demo)":"Due", emailDelivery:"sending" };
+  let result;
+  try {
+    result=await backendPost({action:"booking-create",type:"booking-confirmation",bookingId:booking.id,name:booking.name,email:booking.email,phone:booking.phone,service:booking.service,category:booking.category,date:booking.date,time:booking.time,duration:booking.durationMinutes?durationLabel(booking.durationMinutes):"",durationMinutes:booking.durationMinutes || "",amount:booking.amount,paymentMethod:booking.paymentMethod,paymentStatus:booking.paymentStatus,classId:booking.classId,website:""},30000);
+  } catch(error) { result={ok:false,error:String(error.message || error)}; }
+  if(!result.ok) {
+    return setState({modal:{type:"booking",data:{...d,error:result.error || "The reservation could not be saved. Please try again."}}},false);
+  }
+  booking.emailDelivery=result.emailSent?"sent":"failed";
   state.bookings = [...state.bookings,booking];
+  if(booking.category==="Padel") state.remoteBusyPadel=[...(state.remoteBusyPadel || []),booking];
   state.activities = [{text:`${booking.name} booked ${booking.service}`,time:"Just now"},...state.activities];
   state.modal = {type:"success",data:booking};
   saveState(); render();
-  toast(paid ? "Payment approved" : "Booking reserved", paid ? "Selcom demo payment completed." : "Payment is due at reception.");
-  if (emailEndpoint) sendBookingEmail(booking);
-}
-
-async function sendBookingEmail(booking) {
-  try {
-    const body = new URLSearchParams({
-      type:"booking-confirmation",
-      bookingId:booking.id,
-      name:booking.name,
-      email:booking.email,
-      phone:booking.phone,
-      service:booking.service,
-      category:booking.category,
-      date:booking.date,
-      time:booking.time,
-      duration:booking.durationMinutes?durationLabel(booking.durationMinutes):"",
-      amount:String(booking.amount),
-      paymentMethod:booking.paymentMethod || booking.payment || "",
-      paymentStatus:booking.paymentStatus,
-      website:""
-    });
-    await fetch(emailEndpoint, { method:"POST", mode:"no-cors", body });
-    booking.emailDelivery = "sent";
-    saveState();
-    if (state.modal?.type === "success" && state.modal.data.id === booking.id) { state.modal.data = booking; render(); }
-    toast("Confirmation email requested", `Sent through Pulse Mail for ${booking.email}.`);
-  } catch (error) {
-    booking.emailDelivery = "failed";
-    saveState();
-    if (state.modal?.type === "success" && state.modal.data.id === booking.id) { state.modal.data = booking; render(); }
-    toast("Email unavailable", "The booking is safe. Please keep the booking number.");
-  }
+  toast("Booking saved", result.emailSent ? `Confirmation sent to ${booking.email}.` : "The reservation is saved; keep the booking number because email could not be sent.");
 }
 
 function trainerSubmit(e) {
@@ -821,7 +901,7 @@ function customerBookingAction(action,id) {
   state.modal={type:"bookings"}; saveState(); render(); toast("Booking cancelled",b.paymentStatus==="Refunded"?"Selcom refund recorded.":"No payment was collected.");
 }
 
-function bookingAction(action,id) {
+async function bookingAction(action,id) {
   const b = state.bookings.find(x=>x.id===id); if(!b) return;
   if(action==="manage") return setState({modal:{type:"manage-booking",data:{id}}},false);
   if(action==="checkin") { b.status="Checked in"; if(b.paymentStatus==="Due") b.paymentStatus="Paid at reception"; toast("Customer checked in", `${b.id} has been verified and admitted.`); }
@@ -830,18 +910,31 @@ function bookingAction(action,id) {
     b.status="Cancelled"; b.paymentStatus=b.paymentStatus==="Paid"?"Refunded":"Nothing due"; toast("Booking cancelled", b.paymentStatus==="Refunded"?"Automatic Selcom refund recorded.":"No payment was collected.");
   }
   if(action==="collect") { b.paymentStatus="Paid at reception"; b.status="Fee cleared"; toast("No-show fee cleared", `${b.name} can book again.`); }
+  if(/^PLS-\d{8,}$/.test(b.id)) {
+    try { const result=await persistBookingUpdate(b); if(!result.ok) throw new Error(result.error || "Update failed."); }
+    catch(error) { return toast("Shared booking not updated",String(error.message || error)); }
+  }
   state.activities=[{text:`${b.id} updated: ${b.status}`,time:"Just now"},...state.activities]; saveState(); render();
 }
 
-function manageBookingSubmit(e) {
+async function manageBookingSubmit(e) {
   e.preventDefault();
   const fields=Object.fromEntries(new FormData(e.target).entries());
   const b=state.bookings.find(x=>x.id===fields.id); if(!b) return;
   if(fields.status==="Cancelled" && !staffCanCancel(b)) return toast("Cancellation unavailable","Pulse does not cancel Padel courts.");
   if(b.category==="Padel" && courtIsBooked(fields.service,fields.date,fields.time,b.id,b.durationMinutes || 90)) return toast("Court unavailable","That time overlaps another booking on the same court.");
-  Object.assign(b,{service:fields.service,date:fields.date,time:fields.time,status:fields.status,paymentStatus:fields.paymentStatus});
+  const next={...b,service:fields.service,date:fields.date,time:fields.time,status:fields.status,paymentStatus:fields.paymentStatus};
+  if(/^PLS-\d{8,}$/.test(b.id)) {
+    try { const result=await persistBookingUpdate(next); if(!result.ok) throw new Error(result.error || "Update failed."); }
+    catch(error) { return toast("Booking not updated",String(error.message || error)); }
+  }
+  Object.assign(b,next);
   state.activities=[{text:`${b.id} edited by admin`,time:"Just now"},...state.activities];
   state.modal=null; saveState(); render(); toast("Booking updated",`${b.id} changes have been saved.`);
+}
+
+function persistBookingUpdate(booking) {
+  return backendPost({action:"admin-update-booking",token:state.adminToken,bookingId:booking.id,service:booking.service,date:booking.date,time:booking.time,status:booking.status,paymentStatus:booking.paymentStatus});
 }
 
 function contactCustomer(channel,id) {
@@ -856,3 +949,5 @@ function trainerAction(action,id) {
 }
 
 render();
+loadPublicState();
+setInterval(()=>{ if(state.session?.type!=="admin") loadPublicState(); },30000);

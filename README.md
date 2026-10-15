@@ -35,7 +35,7 @@ The official Pulse wordmark and public photography are stored locally in `assets
 
 ## Included admin flows
 
-- Admin sign-in demo with client-side SHA-256 verification (no plain-text password stored in the repository)
+- Admin sign-in verified by the Google Apps Script service with a short-lived server session
 - Operations overview and live activity
 - Booking filters and customer contact records
 - One-tap email and text-message drafts for customers
@@ -49,13 +49,13 @@ The official Pulse wordmark and public photography are stored locally in `assets
 
 ## Integration boundary
 
-This build does not send real payments, push notifications, or OkayFit requests. The deployed Google Apps Script endpoint in `config.js` writes every new reservation idempotently to a central **Pulse Fitness Reservations** Google Sheet and sends its confirmation email from `hassijatanisha@gmail.com`. The remaining UI state persists in each browser using `localStorage`. Email and text controls in the admin portal open the visitor's installed mail or messaging app with a prepared message. Production adapters still need:
+This build does not send real payments, push notifications, or OkayFit requests. The Google Apps Script endpoint in `config.js` atomically validates Padel conflicts, writes reservations to the central **Pulse Fitness Reservations** Google Sheet, sends confirmation email from `hassijatanisha@gmail.com`, serves shared court settings and Gym schedules, and supplies authenticated booking data to the admin portal. Local storage is now only a client-side cache for fast rendering and non-critical demo community state. Email and text controls in the admin portal open the visitor's installed mail or messaging app with a prepared message. Production adapters still need:
 
 - Selcom merchant credentials, webhook URL, and confirmed refund contract
 - OkayFit API/partner documentation and credentials
 - Push notification project credentials
 
-The demo admin credentials are implemented in client-side JavaScript and are not secure enough for production. Replace them with server-side authentication before using real customer data.
+The admin password is not present in the frontend repository. Google Apps Script validates the submitted SHA-256 value and issues a six-hour in-memory server session. Before deploying the backend source, store that verifier in the private Apps Script property `PULSE_ADMIN_PASSWORD_SHA256`; never commit its value. Before a full public launch, replace the fixed demo credential with per-user accounts and multi-factor authentication.
 
 ## Preview routes
 
