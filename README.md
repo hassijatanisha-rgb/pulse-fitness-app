@@ -19,7 +19,10 @@ The official Pulse wordmark and public photography are stored locally in `assets
 - Private and group Stretch bookings
 - Padel court booking without an account
 - Padel court availability locks and server-ready duplicate-slot validation
-- “Find a Padel partner” coming-soon board with player times and SMS handoff
+- Padel community with open matches, skill levels, friends, and SMS handoff
+- Member promotions with claim state and automatic off-peak court discounts
+- Club ladder rankings, match history, result entry, and point updates
+- Tournament and league registration with capacity, brackets, and event agendas
 - Members-only Juice Bar preorders with pickup times and Selcom-style payment
 - Pay-in-app Selcom-style checkout and pay-on-arrival selection
 - Unique booking confirmation numbers

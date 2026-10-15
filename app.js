@@ -17,6 +17,26 @@ const seed = {
     { id:"BD-101", name:"Asha", phone:"+255 710 221 904", date:"2026-10-18", time:"18:00", level:"Intermediate" },
     { id:"BD-102", name:"Jonas", phone:"+255 754 119 328", date:"2026-10-19", time:"10:00", level:"Beginner" }
   ],
+  padelRankings: [
+    { id:"PR-1", name:"Asha M.", level:"Advanced", points:1280, played:18, won:13 },
+    { id:"PR-2", name:"Jonas K.", level:"Intermediate", points:1170, played:20, won:12 },
+    { id:"PR-3", name:"Neema I.", level:"Intermediate", points:1095, played:15, won:8 },
+    { id:"PR-4", name:"Tanisha Hassija", level:"Intermediate", points:1040, played:12, won:7 },
+    { id:"PR-5", name:"David M.", level:"Beginner", points:920, played:10, won:4 }
+  ],
+  padelMatches: [
+    { id:"MT-101", date:"2026-10-12", player:"Tanisha Hassija", opponent:"Neema I.", score:"6–4, 6–3", result:"Won", points:24 },
+    { id:"MT-102", date:"2026-10-08", player:"Tanisha Hassija", opponent:"Asha M.", score:"4–6, 5–7", result:"Lost", points:-8 }
+  ],
+  padelEvents: [
+    { id:"EV-101", title:"Pulse Friday Americano", date:"2026-10-23", time:"18:00", format:"Americano", capacity:16, registered:["Asha M.","Jonas K.","Neema I."], bracket:["Quarter-finals · 18:00","Semi-finals · 20:00","Final · 21:00"] },
+    { id:"EV-102", title:"Masaki Social League", date:"2026-11-02", time:"19:00", format:"Four-week league", capacity:24, registered:["David M.","Asha M."], bracket:["Round 1 · 2 Nov","Round 2 · 9 Nov","Finals · 23 Nov"] }
+  ],
+  padelPromotions: [
+    { id:"PROMO-OFFPEAK", title:"20% off off-peak courts", detail:"Members save on Padel courts before 16:00.", code:"PULSE20" },
+    { id:"PROMO-GEAR", title:"10% off Padel gear", detail:"Show the claimed offer at reception.", code:"GEAR10" },
+    { id:"PROMO-EVENT", title:"Tournament entry bundle", detail:"Book two events and receive a free recovery drink.", code:"PLAY2" }
+  ],
   activities: [
     { text:"Amina booked Strength Circuit", time:"4 min ago" },
     { text:"Payment received for PLS-2408", time:"4 min ago" },
@@ -31,6 +51,12 @@ const defaultState = {
   bookings: seed.bookings,
   trainerRequests: seed.trainerRequests,
   buddyRequests: seed.buddyRequests,
+  padelRankings: seed.padelRankings,
+  padelMatches: seed.padelMatches,
+  padelEvents: seed.padelEvents,
+  padelPromotions: seed.padelPromotions,
+  claimedPromotions: [],
+  padelFriends: [],
   activities: seed.activities,
   modal: null,
   bookingDraft: null,
@@ -217,10 +243,13 @@ function stretchView() {
 
 function padelView() {
   return `<main class="page">${categoryHero("padel","No membership needed","Padel at Pulse","Choose your court and time. Pay securely now or settle at reception when you arrive.")}
-    <section class="action-grid">
+    <section class="padel-feature-head"><div><div class="eyebrow">Play · connect · compete</div><h2>Your Padel club</h2></div><span class="pill">Live club tools</span></section><section class="action-grid padel-actions">
       ${actionCard("▦","Book a court","Choose an available court and time slot.","book","Padel","Padel Court")}
       ${actionCard("⌁","How check-in works","Show your emailed booking code at reception.","checkin-info")}
-      ${actionCard("♟","Find someone to play with","Coming soon: post a time or find another player who needs a partner.","buddy")}
+      ${actionCard("♟","Players & community","Find partners at your level, post an open match, and add friends.","buddy")}
+      ${actionCard("↗","Rankings & match history","Track results, points, wins, and competitive progress.","padel-rankings")}
+      ${actionCard("🏆","Tournaments & leagues","Register for club events and follow brackets and schedules.","padel-events")}
+      ${actionCard("%","Promotions & discounts","Claim member offers for courts, events, and gear.","padel-promotions")}
       ${actionCard("!","No-show policy","Unpaid no-shows must clear their fee before playing again.","policy")}
     </section>${schedule(padelSlots,"Padel")}
   </main>`;
@@ -283,7 +312,24 @@ function manageBookingModal(booking) {
 }
 
 function buddyModal() {
-  return modalShell("Find a Padel partner — coming soon", `<div class="coming-soon">Coming soon preview</div><p class="panel-sub">Post when you want to play, or text someone already looking for a partner.</p><form id="buddy-form"><div class="form-grid"><div class="field"><label>Name</label><input name="name" required placeholder="Your name"></div><div class="field"><label>Phone</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div><div class="field"><label>Date</label><input name="date" type="date" min="2026-10-15" value="2026-10-18" required></div><div class="field"><label>Time</label><select name="time"><option>08:00</option><option>10:00</option><option>16:00</option><option>18:00</option><option>20:00</option></select></div><div class="field full"><label>Playing level</label><select name="level"><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Any level</option></select></div></div><div class="form-actions"><button class="btn btn-primary">Post my time</button></div></form><div class="buddy-list"><h3>Players looking for a buddy</h3>${state.buddyRequests.map(r=>`<article class="buddy-row"><div><strong>${escapeHTML(r.name)}</strong><span>${escapeHTML(r.level)} · ${prettyDate(r.date)} at ${r.time}</span></div><button class="btn btn-ghost btn-sm" data-buddy-text="${r.id}">Text ${escapeHTML(r.name)}</button></article>`).join("")}</div>`, true);
+  return modalShell("Padel players & community", `<p class="panel-sub">Post an open match, find someone at your level, text them, or add them to your Pulse friends.</p><form id="buddy-form"><div class="form-grid"><div class="field"><label>Name</label><input name="name" value="${state.session?.type==="member"?"Tanisha Hassija":""}" required placeholder="Your name"></div><div class="field"><label>Phone</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div><div class="field"><label>Date</label><input name="date" type="date" min="2026-10-15" value="2026-10-18" required></div><div class="field"><label>Time</label><select name="time"><option>08:00</option><option>10:00</option><option>16:00</option><option>18:00</option><option>20:00</option></select></div><div class="field full"><label>Playing level</label><select name="level"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option><option>Any level</option></select></div></div><div class="form-actions"><button class="btn btn-primary">Post open match</button></div></form><div class="buddy-list"><div class="panel-head"><div><h3>Players looking for a buddy</h3><span class="panel-sub">Open matches in the local Pulse community</span></div></div>${state.buddyRequests.map(r=>`<article class="buddy-row"><div><strong>${escapeHTML(r.name)}</strong><span>${escapeHTML(r.level)} · ${prettyDate(r.date)} at ${r.time}</span></div><div class="row-actions"><button class="btn btn-ghost btn-sm" data-buddy-friend="${r.id}">${state.padelFriends.includes(r.id)?"✓ Friend":"Add friend"}</button><button class="btn btn-primary btn-sm" data-buddy-text="${r.id}">Text ${escapeHTML(r.name)}</button></div></article>`).join("")}</div>`, true);
+}
+
+function padelRankingsModal() {
+  const rankings=[...state.padelRankings].sort((a,b)=>b.points-a.points);
+  return modalShell("Padel rankings & match history", `<div class="ranking-grid"><section><div class="panel-head"><div><h3>Pulse ladder</h3><span class="panel-sub">Points update when match results are recorded.</span></div></div><div class="leaderboard">${rankings.map((r,i)=>`<div class="rank-row ${r.name==="Tanisha Hassija"?"me":""}"><span class="rank-number">${i+1}</span><div><strong>${escapeHTML(r.name)}</strong><span>${escapeHTML(r.level)} · ${r.won} wins / ${r.played} played</span></div><b>${r.points}</b></div>`).join("")}</div></section><section><div class="panel-head"><div><h3>My match history</h3><span class="panel-sub">Most recent results</span></div></div><div class="match-history">${state.padelMatches.map(m=>`<div class="match-row"><span class="status ${m.result==="Won"?"confirmed":"cancelled"}">${m.result}</span><div><strong>vs ${escapeHTML(m.opponent)}</strong><span>${prettyDate(m.date)} · ${escapeHTML(m.score)}</span></div><b>${m.points>0?"+":""}${m.points}</b></div>`).join("")}</div>${state.session?.type==="member"?`<form id="match-result-form"><h3>Record a result</h3><div class="form-grid"><div class="field"><label>Opponent</label><select name="opponent">${rankings.filter(r=>r.name!=="Tanisha Hassija").map(r=>`<option>${escapeHTML(r.name)}</option>`).join("")}</select></div><div class="field"><label>Date</label><input name="date" type="date" value="2026-10-15" required></div><div class="field"><label>Result</label><select name="result"><option>Won</option><option>Lost</option></select></div><div class="field"><label>Score</label><input name="score" required placeholder="6–4, 6–3"></div></div><div class="form-actions"><button class="btn btn-primary">Save match</button></div></form>`:`<p class="fine-print">Sign in as a member to record match results.</p>`}</section></div>`, true);
+}
+
+function padelPromotionsModal() {
+  return modalShell("Padel promotions & discounts", `<p class="panel-sub">Member offers can be claimed here and applied automatically where eligible.</p><div class="promo-grid">${state.padelPromotions.map(p=>{const claimed=state.claimedPromotions.includes(p.id);return `<article class="promo-card"><span class="promo-code">${escapeHTML(p.code)}</span><h3>${escapeHTML(p.title)}</h3><p>${escapeHTML(p.detail)}</p><button class="btn ${claimed?"btn-ghost":"btn-primary"}" data-promo="${p.id}" ${claimed?"disabled":""}>${claimed?"✓ Claimed":"Claim offer"}</button></article>`}).join("")}</div>${state.session?.type!=="member"?`<p class="fine-print">Offers are visible to everyone, but claiming them requires a Pulse member sign-in.</p>`:""}`, true);
+}
+
+function padelEventsModal() {
+  return modalShell("Padel championships & events", `<p class="panel-sub">Register for Pulse competitions and follow the live event agenda.</p><div class="event-list">${state.padelEvents.map(e=>{const joined=e.registered.includes("Tanisha Hassija");return `<article class="event-card"><div class="event-date"><strong>${new Date(`${e.date}T12:00:00`).getDate()}</strong><span>${new Date(`${e.date}T12:00:00`).toLocaleDateString("en-TZ",{month:"short"})}</span></div><div class="event-main"><div class="eyebrow">${escapeHTML(e.format)}</div><h3>${escapeHTML(e.title)}</h3><p>${prettyDate(e.date)} at ${e.time} · ${e.registered.length}/${e.capacity} registered</p><div class="event-bracket">${e.bracket.map((round,i)=>`<span><b>${i+1}</b>${escapeHTML(round)}</span>`).join("")}</div></div><button class="btn ${joined?"btn-ghost":"btn-primary"}" data-event-register="${e.id}" ${joined?"disabled":""}>${joined?"✓ Registered":"Register"}</button></article>`}).join("")}</div>`, true);
+}
+
+function eventRegisterModal(event) {
+  return modalShell(`Register · ${event.title}`, `<form id="event-register-form"><input type="hidden" name="eventId" value="${event.id}"><div class="summary-box"><div class="summary-row"><span>${escapeHTML(event.format)}</span><strong>${prettyDate(event.date)}</strong></div><div class="summary-row"><span>Start time</span><strong>${event.time}</strong></div></div><div class="form-grid"><div class="field"><label>Player name</label><input name="name" value="${state.session?.type==="member"?"Tanisha Hassija":""}" required></div><div class="field"><label>Email</label><input name="email" type="email" value="${state.session?.type==="member"?"member@pulse.co.tz":""}" required placeholder="you@example.com"></div><div class="field full"><label>Playing level</label><select name="level"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option></select></div></div><div class="form-actions"><button type="button" class="btn btn-ghost" data-action="padel-events">Back</button><button class="btn btn-primary">Confirm registration</button></div></form>`);
 }
 
 function juiceModal() {
@@ -327,6 +373,10 @@ function modalView() {
   if (type === "bookings") return bookingsModal();
   if (type === "manage-booking") return manageBookingModal(state.bookings.find(b=>b.id===data.id));
   if (type === "buddy") return buddyModal();
+  if (type === "padel-rankings") return padelRankingsModal();
+  if (type === "padel-promotions") return padelPromotionsModal();
+  if (type === "padel-events") return padelEventsModal();
+  if (type === "event-register") return eventRegisterModal(state.padelEvents.find(e=>e.id===data.id));
   if (type === "juice") return juiceModal();
   if (type === "trainers") return trainersModal();
   if (type === "trainer-form") return trainerFormModal(data.trainer);
@@ -398,6 +448,9 @@ function bindEvents() {
   document.querySelectorAll("[data-booking-action]").forEach(el => el.onclick = () => bookingAction(el.dataset.bookingAction,el.dataset.id));
   document.querySelectorAll("[data-contact]").forEach(el => el.onclick = () => contactCustomer(el.dataset.contact,el.dataset.id));
   document.querySelectorAll("[data-buddy-text]").forEach(el => el.onclick = () => textBuddy(el.dataset.buddyText));
+  document.querySelectorAll("[data-buddy-friend]").forEach(el => el.onclick = () => togglePadelFriend(el.dataset.buddyFriend));
+  document.querySelectorAll("[data-promo]").forEach(el => el.onclick = () => claimPromotion(el.dataset.promo));
+  document.querySelectorAll("[data-event-register]").forEach(el => el.onclick = () => setState({modal:{type:"event-register",data:{id:el.dataset.eventRegister}}},false));
   document.querySelectorAll("[data-customer-action]").forEach(el => el.onclick = () => customerBookingAction(el.dataset.customerAction,el.dataset.id));
   document.querySelectorAll("[data-trainer-action]").forEach(el => el.onclick = () => trainerAction(el.dataset.trainerAction,el.dataset.id));
   document.getElementById("signin-form")?.addEventListener("submit", e => { e.preventDefault(); setState({session:{type:"member"},route:"home",modal:null}); toast("Welcome back", "Your Pulse membership is active."); });
@@ -408,6 +461,8 @@ function bindEvents() {
   document.getElementById("manage-booking-form")?.addEventListener("submit", manageBookingSubmit);
   document.getElementById("buddy-form")?.addEventListener("submit", buddySubmit);
   document.getElementById("juice-form")?.addEventListener("submit", juiceSubmit);
+  document.getElementById("match-result-form")?.addEventListener("submit", matchResultSubmit);
+  document.getElementById("event-register-form")?.addEventListener("submit", eventRegisterSubmit);
   document.querySelector(".modal-backdrop")?.addEventListener("click", e => { if(e.target.classList.contains("modal-backdrop")) setState({modal:null},false); });
 }
 
@@ -424,7 +479,7 @@ function handleAction(action, el, e) {
   if (action === "open-signin" || action === "switch-member") return setState({modal:{type:"signin"}},false);
   if (action === "close-modal") return setState({modal:null},false);
   if (action === "profile") return setState({modal:{type:"profile"}},false);
-  if (action === "signout") return setState({...defaultState,bookings:state.bookings,trainerRequests:state.trainerRequests,buddyRequests:state.buddyRequests,activities:state.activities});
+  if (action === "signout") return setState({...defaultState,bookings:state.bookings,trainerRequests:state.trainerRequests,buddyRequests:state.buddyRequests,padelRankings:state.padelRankings,padelMatches:state.padelMatches,padelEvents:state.padelEvents,padelPromotions:state.padelPromotions,claimedPromotions:state.claimedPromotions,padelFriends:state.padelFriends,activities:state.activities});
   if (action === "open-admin") return setState({adminReturn:state.session?.type || "guest",modal:{type:"admin-signin"}},false);
   if (action === "exit-admin") return setState({session:{type:state.adminReturn || "guest"},route:"home",modal:null});
   if (action === "book") return setState({modal:{type:"booking",data:{category:data.category,service:data.service,time:data.time,date:data.date}}},false);
@@ -432,6 +487,9 @@ function handleAction(action, el, e) {
   if (action === "renew") return setState({modal:{type:"booking",data:{category:"Gym",service:"Pulse Unlimited membership renewal",amount:180000}}},false);
   if (action === "trainers") return setState({modal:{type:"trainers"}},false);
   if (action === "buddy") return setState({modal:{type:"buddy"}},false);
+  if (action === "padel-rankings") return setState({modal:{type:"padel-rankings"}},false);
+  if (action === "padel-promotions") return setState({modal:{type:"padel-promotions"}},false);
+  if (action === "padel-events") return setState({modal:{type:"padel-events"}},false);
   if (action === "juice") return state.session?.type === "member" ? setState({modal:{type:"juice"}},false) : toast("Members only","Sign in as a Pulse member to preorder from the Juice Bar.");
   if (action === "trainer-form") return setState({modal:{type:"trainer-form",data:{trainer:data.trainer}}},false);
   if (action === "back-booking") return setState({modal:{type:"booking",data:state.bookingDraft}},false);
@@ -452,6 +510,9 @@ function bookingSubmit(e) {
   const mapped = serviceDetails[draft.service];
   if (mapped) { draft.category = mapped[0]; draft.amount = mapped[1]; }
   else draft.amount = Number(state.bookingDraft.amount || (draft.category === "Padel" ? 40000 : draft.category === "Stretch" ? 35000 : 25000));
+  if (draft.category === "Padel" && state.session?.type === "member" && state.claimedPromotions.includes("PROMO-OFFPEAK") && Number(draft.time.split(":")[0]) < 16) {
+    draft.amount = Math.round(draft.amount * .8); draft.promotion="PULSE20";
+  }
   if (draft.category === "Padel" && courtIsBooked(draft.service,draft.date,draft.time)) {
     return setState({modal:{type:"booking",data:{...draft,error:"That court has just been booked. Please choose another court or time."}}},false);
   }
@@ -509,6 +570,37 @@ function textBuddy(id) {
   const r=state.buddyRequests.find(x=>x.id===id); if(!r) return;
   const message=`Hi ${r.name}, I saw your Pulse Padel partner request for ${prettyDate(r.date)} at ${r.time}. Would you like to play?`;
   location.href=`sms:${String(r.phone).replace(/\s/g,"")}?body=${encodeURIComponent(message)}`;
+}
+
+function togglePadelFriend(id) {
+  state.padelFriends = state.padelFriends.includes(id) ? state.padelFriends.filter(x=>x!==id) : [...state.padelFriends,id];
+  saveState(); render(); toast(state.padelFriends.includes(id)?"Friend added":"Friend removed","Your Pulse Padel community has been updated.");
+}
+
+function claimPromotion(id) {
+  if(state.session?.type!=="member") return toast("Members only","Sign in as a Pulse member to claim this offer.");
+  if(state.claimedPromotions.includes(id)) return;
+  state.claimedPromotions=[...state.claimedPromotions,id]; saveState(); render(); toast("Offer claimed","The discount is now linked to your member profile.");
+}
+
+function matchResultSubmit(e) {
+  e.preventDefault();
+  if(state.session?.type!=="member") return;
+  const f=Object.fromEntries(new FormData(e.target).entries());
+  const won=f.result==="Won"; const points=won?24:-8;
+  state.padelMatches=[{id:`MT-${Date.now().toString().slice(-6)}`,date:f.date,player:"Tanisha Hassija",opponent:f.opponent,score:f.score,result:f.result,points},...state.padelMatches];
+  const me=state.padelRankings.find(r=>r.name==="Tanisha Hassija"); if(me){me.played+=1; me.won+=won?1:0; me.points+=points;}
+  state.activities=[{text:`Padel result recorded: ${f.result} vs ${f.opponent}`,time:"Just now"},...state.activities];
+  state.modal={type:"padel-rankings"}; saveState(); render(); toast("Match recorded",`${points>0?"+":""}${points} ladder points applied.`);
+}
+
+function eventRegisterSubmit(e) {
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target).entries()); const event=state.padelEvents.find(x=>x.id===f.eventId); if(!event) return;
+  if(event.registered.length>=event.capacity) return toast("Event full","Join the waiting list at reception.");
+  if(event.registered.some(n=>n.toLowerCase()===String(f.name).toLowerCase())) return toast("Already registered","This player is already on the event list.");
+  event.registered=[...event.registered,f.name]; state.activities=[{text:`${f.name} registered for ${event.title}`,time:"Just now"},...state.activities];
+  state.modal={type:"padel-events"}; saveState(); render(); toast("Registration confirmed",`A confirmation is ready for ${f.email}.`);
 }
 
 function juiceSubmit(e) {
