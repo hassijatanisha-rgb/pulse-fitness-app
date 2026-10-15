@@ -15,10 +15,11 @@ The official Pulse wordmark and public photography are stored locally in `assets
 ## Included customer flows
 
 - Member sign-in demo and guest access
-- Gym classes, day passes, trainer discovery, trainer matching, and membership renewal
-- Private and group Stretch bookings
+- Official Pulse weekly Gym timetable with section-specific class booking, day passes, trainer discovery, trainer matching, and membership renewal
+- Stretch Out Pilates Reformer and premium mat class bookings
 - Padel court booking without an account
-- Padel court availability locks and server-ready duplicate-slot validation
+- Padel overlap protection plus admin-controlled court pricing and booking length (90 minutes by default)
+- Admin-editable Gym calendar with class dates, times, instructors, capacity, pricing, and visibility
 - Padel community with open matches, skill levels, friends, and SMS handoff
 - Member promotions with claim state and automatic off-peak court discounts
 - Club ladder rankings, match history, result entry, and point updates
@@ -29,11 +30,12 @@ The official Pulse wordmark and public photography are stored locally in `assets
 - Seven-day service calendars with selectable dates and times
 - Customer booking history and 24-hour cancellation enforcement
 - Booking confirmation and policy messaging
+- Branded booking-email preview and a Google Apps Script backend that stores reservations in a central Sheet and sends confirmation email
 - Responsive desktop and mobile interfaces
 
 ## Included admin flows
 
-- Admin sign-in demo (`admin@admin.com` / `12345678`)
+- Admin sign-in demo with client-side SHA-256 verification (no plain-text password stored in the repository)
 - Operations overview and live activity
 - Booking filters and customer contact records
 - One-tap email and text-message drafts for customers
@@ -47,11 +49,10 @@ The official Pulse wordmark and public photography are stored locally in `assets
 
 ## Integration boundary
 
-This build is intentionally integration-ready but does not send real payments, emails, push notifications, or OkayFit requests. Email and text controls open the visitor's installed mail or messaging app with a prepared message. Data persists in each browser using `localStorage`; it is not shared between devices. Production adapters need:
+This build does not send real payments, push notifications, or OkayFit requests. The deployed Google Apps Script endpoint in `config.js` writes every new reservation idempotently to a central **Pulse Fitness Reservations** Google Sheet and sends its confirmation email from `hassijatanisha@gmail.com`. The remaining UI state persists in each browser using `localStorage`. Email and text controls in the admin portal open the visitor's installed mail or messaging app with a prepared message. Production adapters still need:
 
 - Selcom merchant credentials, webhook URL, and confirmed refund contract
 - OkayFit API/partner documentation and credentials
-- Transactional email provider credentials
 - Push notification project credentials
 
 The demo admin credentials are implemented in client-side JavaScript and are not secure enough for production. Replace them with server-side authentication before using real customer data.

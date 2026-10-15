@@ -3,12 +3,43 @@ const icons = {
   bell: `🔔`, user: `●`, arrow: `↗`, check: `✓`, close: `×`
 };
 
+const emailEndpoint = String(window.PULSE_CONFIG?.bookingEmailEndpoint || "").trim();
+
+const defaultBusinessSettings = Object.freeze({
+  padelCourtPrice:Number(window.PULSE_CONFIG?.businessDefaults?.padelCourtPrice || 40000),
+  padelDurationMinutes:Number(window.PULSE_CONFIG?.businessDefaults?.padelDurationMinutes || 90),
+  padelCourtCount:Number(window.PULSE_CONFIG?.businessDefaults?.padelCourtCount || 3),
+  weekdayOpeningTime:String(window.PULSE_CONFIG?.businessDefaults?.weekdayOpeningTime || "05:00"),
+  weekdayClosingTime:String(window.PULSE_CONFIG?.businessDefaults?.weekdayClosingTime || "21:00"),
+  weekendOpeningTime:String(window.PULSE_CONFIG?.businessDefaults?.weekendOpeningTime || "07:00"),
+  weekendClosingTime:String(window.PULSE_CONFIG?.businessDefaults?.weekendClosingTime || "19:00")
+});
+const gymClassTemplates = {
+  1:[["17:00","18:00","Boxing","Slim"],["17:45","18:30","Spinning","Nadhege"],["18:00","18:45","Core Work","Mussa"],["19:00","19:45","Aerial Yoga","Liz"]],
+  2:[["06:30","07:30","Spinning","Karim"],["18:00","19:00","Mat Pilates","Eli"],["18:30","19:30","Climb to the Beat","Mchina"]],
+  3:[["06:30","07:30","Spinning","Mchina"],["08:15","09:15","Power Yoga","Sisti"],["18:00","19:00","Aerobics","Leah"],["18:30","19:15","Zumba","Arafat"]],
+  4:[["18:00","19:00","Spin. HIIT. Repeat.","Mandi"],["18:00","19:00","Dance","Selam"],["18:30","19:30","Boxing Bootcamp","Slim"]],
+  5:[["06:30","07:30","Fusion – TRX","Karim"],["18:00","19:00","Circuit","Mussa"],["18:00","19:00","Aerobics","Leah"],["18:30","19:30","Aerial Hoop","Selam"]],
+  6:[["09:00","10:00","Spinning","Nadhege"]],
+  0:[]
+};
+
+function createGymSchedule() {
+  return Array.from({length:7},(_,day)=>{
+    const date=new Date("2026-10-16T12:00:00"); date.setDate(date.getDate()+day);
+    const iso=date.toISOString().slice(0,10);
+    return gymClassTemplates[date.getDay()].map((slot,index)=>({
+      id:`GC-${day+1}${index+1}`, date:iso, time:slot[0], endTime:slot[1], name:slot[2], trainer:slot[3], capacity:14, price:25000, active:true
+    }));
+  }).flat();
+}
+
 const seed = {
   bookings: [
     { id:"PLS-2408", service:"Strength Circuit", category:"Gym", date:"2026-10-16", time:"07:00", name:"Amina Yusuf", email:"amina@example.com", phone:"+255 712 441 820", payment:"Paid in app", amount:25000, status:"Confirmed", paymentStatus:"Paid" },
-    { id:"PLS-2411", service:"Padel Court 1", category:"Padel", date:"2026-10-16", time:"18:00", name:"David Mushi", email:"david@example.com", phone:"+255 754 220 118", payment:"Pay on arrival", amount:40000, status:"Confirmed", paymentStatus:"Due" },
-    { id:"PLS-2415", service:"Private Stretch", category:"Stretch", date:"2026-10-17", time:"10:30", name:"Neema Issa", email:"neema@example.com", phone:"+255 685 110 927", payment:"Paid in app", amount:35000, status:"Confirmed", paymentStatus:"Paid" },
-    { id:"PLS-2398", service:"Padel Court 2", category:"Padel", date:"2026-10-14", time:"20:00", name:"Kelvin John", email:"kelvin@example.com", phone:"+255 713 951 120", payment:"Pay on arrival", amount:40000, status:"No-show", paymentStatus:"No-show fee due" }
+    { id:"PLS-2411", service:"Court 1", category:"Padel", date:"2026-10-16", time:"18:00", durationMinutes:90, name:"David Mushi", email:"david@example.com", phone:"+255 754 220 118", payment:"Pay on arrival", amount:40000, status:"Confirmed", paymentStatus:"Due" },
+    { id:"PLS-2415", service:"Reformer Sculpt", category:"Stretch", date:"2026-10-17", time:"10:00", name:"Neema Issa", email:"neema@example.com", phone:"+255 685 110 927", payment:"Paid in app", amount:30000, status:"Confirmed", paymentStatus:"Paid" },
+    { id:"PLS-2398", service:"Court 2", category:"Padel", date:"2026-10-14", time:"20:00", durationMinutes:90, name:"Kelvin John", email:"kelvin@example.com", phone:"+255 713 951 120", payment:"Pay on arrival", amount:40000, status:"No-show", paymentStatus:"No-show fee due" }
   ],
   trainerRequests: [
     { id:"TR-102", name:"Mariam Said", email:"mariam@example.com", phone:"+255 786 300 122", goal:"Build strength and create a sustainable diet plan", trainer:"Baraka M.", date:"2026-10-18", time:"12:00", status:"Pending" }
@@ -41,7 +72,8 @@ const seed = {
     { text:"Amina booked Strength Circuit", time:"4 min ago" },
     { text:"Payment received for PLS-2408", time:"4 min ago" },
     { text:"Kelvin marked as a no-show", time:"Yesterday" }
-  ]
+  ],
+  gymSchedule: createGymSchedule()
 };
 
 const defaultState = {
@@ -58,6 +90,8 @@ const defaultState = {
   claimedPromotions: [],
   padelFriends: [],
   activities: seed.activities,
+  gymSchedule: seed.gymSchedule,
+  businessSettings: { ...defaultBusinessSettings },
   modal: null,
   bookingDraft: null,
   filters: "All",
@@ -66,10 +100,26 @@ const defaultState = {
 
 let state = loadState();
 
+const PulseConfigController = Object.freeze({
+  get() { return Object.freeze({ ...state.businessSettings }); },
+  update(patch) {
+    if(state.session?.type!=="admin") throw new Error("Admin access required");
+    const next={...state.businessSettings,...patch};
+    if(!Number.isFinite(next.padelCourtPrice) || next.padelCourtPrice<0) throw new Error("Invalid court price");
+    if(!Number.isInteger(next.padelDurationMinutes) || next.padelDurationMinutes<30 || next.padelDurationMinutes>480) throw new Error("Booking length must be 30–480 minutes");
+    state.businessSettings=next;
+    saveState();
+    return this.get();
+  }
+});
+window.PulseConfigController=PulseConfigController;
+
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem("pulse-demo-state"));
     const loaded = { ...defaultState, ...(saved || {}), modal:null, bookingDraft:null };
+    loaded.businessSettings = { ...defaultBusinessSettings, ...(saved?.businessSettings || {}) };
+    loaded.gymSchedule = Array.isArray(saved?.gymSchedule) && saved.gymSchedule.length ? saved.gymSchedule : structuredClone(seed.gymSchedule);
     const preview = new URLSearchParams(location.search).get("view");
     if (preview === "admin") loaded.session = null;
     if (preview === "member") loaded.session = { type:"member" };
@@ -93,12 +143,35 @@ function uid(prefix="PLS") {
   return `${prefix}-${highest + 1}`;
 }
 function escapeHTML(value="") { return String(value).replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
+async function sha256(value="") {
+  const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(value)));
+  return [...new Uint8Array(bytes)].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+}
 function activeBooking(b) { return !["Cancelled","No-show","Fee cleared"].includes(b.status); }
 function staffCanCancel(b) { return ["Gym","Stretch"].includes(b.category); }
 function courtNumber(service="") { return String(service).match(/court\s*(\d+)/i)?.[1] || ""; }
-function courtIsBooked(service,date,time,ignoreId="") {
+function timeToMinutes(time="00:00") { const [h,m]=String(time).split(":").map(Number); return h*60+m; }
+function durationLabel(minutes=90) { const hours=minutes/60; return Number.isInteger(hours) ? `${hours} ${hours===1?"hour":"hours"}` : `${Math.floor(hours)} hr ${minutes%60} min`; }
+function minutesToTime(minutes) { const h=Math.floor(minutes/60)%24,m=minutes%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
+function padelSlotsForDate(date) {
+  const weekend=[0,6].includes(new Date(`${date}T12:00:00`).getDay());
+  const opening=timeToMinutes(weekend?state.businessSettings.weekendOpeningTime:state.businessSettings.weekdayOpeningTime);
+  const closing=timeToMinutes(weekend?state.businessSettings.weekendClosingTime:state.businessSettings.weekdayClosingTime);
+  const duration=Number(state.businessSettings.padelDurationMinutes);
+  const slots=[];
+  for(let start=opening;start+duration<=closing;start+=duration) {
+    for(let court=1;court<=Number(state.businessSettings.padelCourtCount);court++) slots.push([minutesToTime(start),`Court ${court}`]);
+  }
+  return slots;
+}
+function courtIsBooked(service,date,time,ignoreId="",duration=state.businessSettings.padelDurationMinutes) {
   const court=courtNumber(service);
-  return Boolean(court && state.bookings.some(b=>b.id!==ignoreId && b.category==="Padel" && activeBooking(b) && courtNumber(b.service)===court && b.date===date && b.time===time));
+  const start=timeToMinutes(time), end=start+Number(duration || 90);
+  return Boolean(court && state.bookings.some(b=>{
+    if(b.id===ignoreId || b.category!=="Padel" || !activeBooking(b) || courtNumber(b.service)!==court || b.date!==date) return false;
+    const bookedStart=timeToMinutes(b.time), bookedEnd=bookedStart+Number(b.durationMinutes || 90);
+    return start < bookedEnd && bookedStart < end;
+  }));
 }
 
 function setState(patch, persist=true) {
@@ -177,8 +250,8 @@ function homeView() {
     </section>
     <section class="service-grid" aria-label="Pulse services">
       ${serviceCard("gym","Gym at Pulse","Classes, day passes and personal training.")}
-      ${serviceCard("stretch","Stretch at Pulse","Private recovery and guided group sessions.")}
-      ${serviceCard("padel","Padel at Pulse","Pick a court, choose a time, and play.")}
+      ${serviceCard("stretch","Stretch Out Pulse","Pilates Reformer and premium mat classes.")}
+      ${serviceCard("padel","Padel Up Pulse","Reserve courts, join open matches, and play.")}
     </section>
     <section class="quick-grid">
       <div class="panel"><div class="panel-head"><div><h3>Upcoming bookings</h3><span class="panel-sub">Confirmation emails are ready at check-in.</span></div><button class="btn btn-ghost btn-sm" data-action="view-bookings">View all</button></div>
@@ -207,42 +280,50 @@ function categoryHero(kind, kicker, title, body) {
   return `<section class="category-hero ${kind}"><div>${kind === "padel" ? `<img class="padel-lockup hero-lockup" src="assets/padel-logo.png" alt="Padel at Pulse">` : ""}<div class="eyebrow">${kicker}</div><h1>${title}</h1><p>${body}</p></div></section>`;
 }
 
-const gymSlots = [
-  ["07:00","Strength Circuit","Baraka · 6 spots"], ["09:30","Pulse HIIT","Joy · 3 spots"], ["17:30","Box & Burn","Moses · 8 spots"], ["19:00","Core Lab","Joy · 4 spots"]
-];
-const stretchSlots = [["08:00","Morning Mobility","8 spots"],["12:30","Desk Reset","5 spots"],["17:00","Deep Release","4 spots"],["18:30","Recovery Flow","7 spots"]];
-const padelSlots = [["08:00","Court 1","Available"],["10:00","Court 2","Available"],["16:00","Court 1","Available"],["18:00","Court 3","Available"]];
+const stretchSlots = [["08:00","Reformer Foundations","8 spots"],["10:00","Reformer Sculpt","5 spots"],["17:00","Premium Mat Pilates","8 spots"],["18:30","Reformer Flow","7 spots"]];
 
 function schedule(slots, category) {
-  return `<section class="schedule"><div class="schedule-head"><div><div class="eyebrow">Thursday, 16 October</div><h2>Available today</h2></div><button class="btn btn-ghost btn-sm" data-action="calendar" data-category="${category}">Full calendar</button></div>
-  <div class="slot-grid">${slots.map(s=>{ const booked=category==="Padel" && courtIsBooked(s[1],"2026-10-16",s[0]); return `<button class="slot ${booked?"unavailable":""}" data-action="book" data-category="${category}" data-service="${s[1]}" data-time="${s[0]}" data-date="2026-10-16" ${booked?"disabled":""}><div class="slot-time">${s[0]}</div><div class="slot-meta">${s[1]}</div><span class="spots">${booked?"Booked":s[2]}</span></button>`; }).join("")}</div></section>`;
+  return `<section class="schedule"><div class="schedule-head"><div><div class="eyebrow">Friday, 16 October</div><h2>Available today</h2></div><button class="btn btn-ghost btn-sm" data-action="calendar" data-category="${category}">Full calendar</button></div>
+  <div class="slot-grid">${slots.map(s=>{ const booked=category==="Padel" && courtIsBooked(s[1],"2026-10-16",s[0]); const detail=category==="Padel"&&!booked?`${durationLabel(state.businessSettings.padelDurationMinutes)} · ${money(state.businessSettings.padelCourtPrice)}`:(booked?"Booked":s[2]); return `<button class="slot ${booked?"unavailable":""}" data-action="book" data-category="${category}" data-service="${s[1]}" data-time="${s[0]}" data-date="2026-10-16" data-amount="${category==="Padel"?state.businessSettings.padelCourtPrice:""}" data-duration="${category==="Padel"?state.businessSettings.padelDurationMinutes:""}" ${booked?"disabled":""}><div class="slot-time">${s[0]}</div><div class="slot-meta">${s[1]}</div><span class="spots">${detail}</span></button>`; }).join("")}</div></section>`;
+}
+
+function gymScheduleSection() {
+  const classes=state.gymSchedule.filter(item=>item.date==="2026-10-16"&&item.active).sort((a,b)=>a.time.localeCompare(b.time));
+  return `<section class="schedule"><div class="schedule-head"><div><div class="eyebrow">Friday, 16 October</div><h2>Pulse classes today</h2></div><button class="btn btn-ghost btn-sm" data-action="calendar" data-category="Gym">Weekly schedule</button></div><div class="slot-grid">${classes.length?classes.map(item=>gymClassButton(item)).join(""):`<div class="empty">No Pulse classes are scheduled today.</div>`}</div></section>`;
+}
+
+function gymClassButton(item) {
+  const booked=state.bookings.filter(b=>b.category==="Gym"&&b.classId===item.id&&activeBooking(b)).length;
+  const remaining=Math.max(0,Number(item.capacity)-booked);
+  return `<button class="slot ${!remaining?"unavailable":""}" data-action="book" data-category="Gym" data-service="${escapeHTML(item.name)}" data-class-id="${item.id}" data-time="${item.time}" data-date="${item.date}" data-amount="${item.price}" ${!remaining?"disabled":""}><div class="slot-time">${item.time}–${item.endTime || ""}</div><div class="slot-meta">${escapeHTML(item.name)}</div><span class="spots">${escapeHTML(item.trainer)} · ${remaining} spots</span></button>`;
 }
 
 function gymView() {
   return `<main class="page">${categoryHero("gym","Build your strength","Gym at Pulse","Book a class, work with a trainer, or renew your membership—all in one place.")}
     <section class="action-grid">
-      ${actionCard("◫","Book a class","Reserve your place in this week’s schedule.","book","Gym","Fitness class")}
+      ${actionCard("◫","Book a class","Reserve your place in the official Pulse weekly schedule.","calendar","Gym")}
       ${actionCard("◎","Find a trainer","Tell us your goals or choose a trainer directly.","trainers")}
       ${actionCard("↻","Membership","Renew your plan through Selcom.","renew")}
       ${actionCard("◇","Buy a day pass","One full day of Pulse access.","book","Gym","Gym day pass")}
       ${state.session?.type === "member" ? actionCard("◍","Preorder from the Juice Bar","Choose a drink and pickup time so it is ready after your workout.","juice") : ""}
       ${actionCard("＋","What we offer","Equipment, facilities and services.","offerings")}
-    </section>${schedule(gymSlots,"Gym")}
+    </section>${gymScheduleSection()}
   </main>`;
 }
 
 function stretchView() {
-  return `<main class="page">${categoryHero("stretch","Recover. Reset. Return.","Stretch at Pulse","Give your body focused attention with private sessions or guided group classes.")}
+  return `<main class="page">${categoryHero("stretch","Precision movement & recovery","Stretch Out Pulse","Reserve premium Pilates Reformer sessions or refined mat classes in a dedicated studio experience.")}
     <section class="action-grid">
-      ${actionCard("◒","Private session","One-on-one assisted stretching built around you.","book","Stretch","Private Stretch")}
-      ${actionCard("◉","Group class","Book a place in a guided Stretch class.","book","Stretch","Stretch class")}
+      ${actionCard("◒","Pilates Reformer","Book a place on a Reformer class schedule.","calendar","Stretch")}
+      ${actionCard("◉","Premium mat classes","Reserve a premium guided mat Pilates class.","book","Stretch","Premium Mat Pilates")}
       ${actionCard("i","Cancellation policy","Notify us at least 24 hours before your session.","policy")}
     </section>${schedule(stretchSlots,"Stretch")}
   </main>`;
 }
 
 function padelView() {
-  return `<main class="page">${categoryHero("padel","No membership needed","Padel at Pulse","Choose your court and time. Pay securely now or settle at reception when you arrive.")}
+  const todaySlots=padelSlotsForDate("2026-10-16").slice(0,6).map(s=>[s[0],s[1],"Available"]);
+  return `<main class="page">${categoryHero("padel","No membership needed","Padel Up Pulse","Choose a court, enter the open-match lobby, or find a player at your level.")}
     <section class="padel-feature-head"><div><div class="eyebrow">Play · connect · compete</div><h2>Your Padel club</h2></div><span class="pill">Live club tools</span></section><section class="action-grid padel-actions">
       ${actionCard("▦","Book a court","Choose an available court and time slot.","book","Padel","Padel Court")}
       ${actionCard("⌁","How check-in works","Show your emailed booking code at reception.","checkin-info")}
@@ -251,7 +332,7 @@ function padelView() {
       ${actionCard("🏆","Tournaments & leagues","Register for club events and follow brackets and schedules.","padel-events")}
       ${actionCard("%","Promotions & discounts","Claim member offers for courts, events, and gear.","padel-promotions")}
       ${actionCard("!","No-show policy","Unpaid no-shows must clear their fee before playing again.","policy")}
-    </section>${schedule(padelSlots,"Padel")}
+    </section>${schedule(todaySlots,"Padel")}
   </main>`;
 }
 
@@ -268,9 +349,22 @@ function adminSignInModal() {
 }
 
 function bookingModal(draft = {}) {
-  const d = { category:"Gym", service:"Fitness class", time:"07:00", date:"2026-10-16", amount: draft.category === "Padel" ? 40000 : draft.category === "Stretch" ? 35000 : 25000, ...draft, date:draft.date || "2026-10-16", time:draft.time || "07:00" };
+  const firstGymClass=state.gymSchedule.find(item=>item.active);
+  const baseCategory=draft.category || "Gym";
+  const defaultService=baseCategory==="Padel"?"Court 1":baseCategory==="Stretch"?"Reformer Foundations":firstGymClass?.name || "Pulse class";
+  const defaultAmount=baseCategory==="Padel"?state.businessSettings.padelCourtPrice:baseCategory==="Stretch"?35000:firstGymClass?.price || 25000;
+  const d = { category:baseCategory, service:defaultService, classId:baseCategory==="Gym"?firstGymClass?.id:"", time:firstGymClass?.time || "07:00", date:firstGymClass?.date || "2026-10-16", amount:defaultAmount, durationMinutes:baseCategory==="Padel"?state.businessSettings.padelDurationMinutes:null, ...draft };
+  d.date=d.date || firstGymClass?.date || "2026-10-16";
+  d.time=d.time || firstGymClass?.time || "07:00";
+  d.amount=Number.isFinite(Number(d.amount))?Number(d.amount):defaultAmount;
+  if(d.category==="Padel") d.durationMinutes=Number(d.durationMinutes || state.businessSettings.padelDurationMinutes);
   state.bookingDraft = d;
-  const services = d.category === "Padel" ? [courtNumber(d.service)?d.service:"Court 1","Court 1","Court 2","Court 3"] : [d.service,"Fitness class","Private Stretch","Stretch class","Gym day pass","Pulse Unlimited membership renewal"];
+  const services = d.category === "Padel"
+    ? [courtNumber(d.service)?d.service:"Court 1",...Array.from({length:Number(state.businessSettings.padelCourtCount)},(_,index)=>`Court ${index+1}`)]
+    : d.category === "Stretch"
+      ? [d.service]
+      : [d.service];
+  const padelSummary=d.category==="Padel"?`<div class="summary-row"><span>Court time</span><strong>${durationLabel(d.durationMinutes)}</strong></div><div class="summary-row"><span>Four-player split (25%)</span><strong>${money(d.amount/4)} each</strong></div>`:"";
   return modalShell("Make a booking", `<div class="steps"><span class="step on"></span><span class="step on"></span><span class="step"></span></div>
     <form id="booking-form"><div class="form-grid">
       <div class="field"><label>Service</label><select name="service">${services.filter((v,i,a)=>a.indexOf(v)===i).map(v=>`<option value="${escapeHTML(v)}">${escapeHTML(v)}</option>`).join("")}</select></div>
@@ -280,13 +374,14 @@ function bookingModal(draft = {}) {
       <div class="field"><label>Email</label><input name="email" type="email" value="${state.session?.type === "member" ? "member@pulse.co.tz" : ""}" required placeholder="you@example.com"></div>
       <div class="field"><label>Phone number</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div>
       <div class="field full"><label>Payment</label><input type="hidden" name="payment" value="Paid in app"><div class="segmented"><button type="button" class="segment selected" data-payment="Paid in app"><strong>Pay in the app</strong><span>Secure Selcom checkout</span></button><button type="button" class="segment" data-payment="Pay on arrival"><strong>Pay on arrival</strong><span>Settle at reception</span></button></div></div>
-    </div><p class="form-error" role="alert">${escapeHTML(d.error || "")}</p><div class="summary-box"><div class="summary-row"><span>Booking estimate</span><strong>${money(d.amount)}</strong></div><div class="summary-row"><span>Cancellation</span><strong>24 hours’ notice</strong></div></div>
+    </div><p class="form-error" role="alert">${escapeHTML(d.error || "")}</p><div class="summary-box"><div class="summary-row"><span>Booking estimate</span><strong>${money(d.amount)}</strong></div>${padelSummary}<div class="summary-row"><span>Cancellation</span><strong>24 hours’ notice</strong></div></div>
     <div class="form-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button><button class="btn btn-primary">Continue</button></div></form>`);
 }
 
 function paymentModal(d) {
+  const split=d.category==="Padel"?`<div class="summary-row"><span>Four-player split (25%)</span><strong>${money(Number(d.amount)/4)} each</strong></div>`:"";
   return modalShell("Selcom secure checkout", `<div class="steps"><span class="step on"></span><span class="step on"></span><span class="step on"></span></div>
-    <div class="summary-box"><div class="summary-row"><span>${escapeHTML(d.service)}</span><strong>${money(d.amount)}</strong></div><div class="summary-row"><span>${prettyDate(d.date)} at ${d.time}</span><strong>${escapeHTML(d.name)}</strong></div></div>
+    <div class="summary-box"><div class="summary-row"><span>${escapeHTML(d.service)}</span><strong>${money(d.amount)}</strong></div>${split}<div class="summary-row"><span>${prettyDate(d.date)} at ${d.time}</span><strong>${escapeHTML(d.name)}</strong></div></div>
     <form id="payment-form"><input type="hidden" name="method" value="Mobile money"><div class="eyebrow" style="margin-bottom:10px">Select payment method</div><div class="payment-methods"><button type="button" class="payment-card selected" data-method="Mobile money"><span class="payment-logo">MOMO</span><span><strong>Mobile money</strong><small>M-Pesa, Airtel Money, Mixx by Yas</small></span></button><button type="button" class="payment-card" data-method="Card"><span class="payment-logo">CARD</span><span><strong>Debit or credit card</strong><small>Visa and Mastercard via Selcom</small></span></button></div>
     <div class="form-grid" style="margin-top:16px"><div class="field full"><label>Payment phone number</label><input name="paymentPhone" type="tel" value="${escapeHTML(d.phone)}" required placeholder="+255 7XX XXX XXX"></div></div>
     <p class="fine-print">Prototype checkout. The production button will create a Selcom order and verify its webhook before confirming.</p>
@@ -294,9 +389,9 @@ function paymentModal(d) {
 }
 
 function calendarModal(category) {
-  const slots = category === "Padel" ? padelSlots : category === "Stretch" ? stretchSlots : gymSlots;
   const dates = Array.from({length:7},(_,i)=>{ const d=new Date("2026-10-16T12:00:00"); d.setDate(d.getDate()+i); return d.toISOString().slice(0,10); });
-  return modalShell(`${category} calendar`, `<p class="panel-sub">Choose a date and available time.</p><div class="calendar-list">${dates.map(date=>`<section class="calendar-day"><strong>${prettyDate(date)}</strong><div class="slot-grid">${slots.slice(0,3).map(s=>{ const booked=category==="Padel" && courtIsBooked(s[1],date,s[0]); return `<button class="slot ${booked?"unavailable":""}" data-action="book" data-category="${category}" data-service="${escapeHTML(s[1])}" data-time="${s[0]}" data-date="${date}" ${booked?"disabled":""}><span class="slot-time">${s[0]}</span><span class="slot-meta">${escapeHTML(s[1])}</span><span class="spots">${booked?"Booked":"Available"}</span></button>`; }).join("")}</div></section>`).join("")}</div>`, true);
+  if(category==="Gym") return modalShell("Pulse weekly class schedule", `<p class="panel-sub">Official class schedule from Pulse. Choose a class to reserve your place.</p><div class="calendar-list">${dates.map(date=>{const classes=state.gymSchedule.filter(item=>item.date===date&&item.active).sort((a,b)=>a.time.localeCompare(b.time));return `<section class="calendar-day"><strong>${prettyDate(date)}</strong>${classes.length?`<div class="slot-grid">${classes.map(gymClassButton).join("")}</div>`:`<div class="empty">No classes scheduled.</div>`}</section>`}).join("")}</div>`, true);
+  return modalShell(category==="Padel"?"Padel Up court calendar":"Stretch Out schedule", `<p class="panel-sub">Choose a date and available time.${category==="Padel"?` Grid blocks are generated at ${durationLabel(state.businessSettings.padelDurationMinutes)} each.`:""}</p><div class="calendar-list">${dates.map(date=>{const slots=category==="Padel"?padelSlotsForDate(date):stretchSlots;return `<section class="calendar-day"><strong>${prettyDate(date)}</strong><div class="slot-grid">${slots.map(s=>{ const booked=category==="Padel" && courtIsBooked(s[1],date,s[0]); const amount=category==="Padel"?state.businessSettings.padelCourtPrice:30000; return `<button class="slot ${booked?"unavailable":""}" data-action="book" data-category="${category}" data-service="${escapeHTML(s[1])}" data-time="${s[0]}" data-date="${date}" data-amount="${amount}" data-duration="${category==="Padel"?state.businessSettings.padelDurationMinutes:""}" ${booked?"disabled":""}><span class="slot-time">${s[0]}${category==="Padel"?`–${minutesToTime(timeToMinutes(s[0])+Number(state.businessSettings.padelDurationMinutes))}`:""}</span><span class="slot-meta">${escapeHTML(s[1])}</span><span class="spots">${booked?"Booked":category==="Padel"?money(amount):"Available"}</span></button>`; }).join("")}</div></section>`}).join("")}</div>`, true);
 }
 
 function bookingsModal() {
@@ -312,7 +407,7 @@ function manageBookingModal(booking) {
 }
 
 function buddyModal() {
-  return modalShell("Padel players & community", `<p class="panel-sub">Post an open match, find someone at your level, text them, or add them to your Pulse friends.</p><form id="buddy-form"><div class="form-grid"><div class="field"><label>Name</label><input name="name" value="${state.session?.type==="member"?"Tanisha Hassija":""}" required placeholder="Your name"></div><div class="field"><label>Phone</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div><div class="field"><label>Date</label><input name="date" type="date" min="2026-10-15" value="2026-10-18" required></div><div class="field"><label>Time</label><select name="time"><option>08:00</option><option>10:00</option><option>16:00</option><option>18:00</option><option>20:00</option></select></div><div class="field full"><label>Playing level</label><select name="level"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option><option>Any level</option></select></div></div><div class="form-actions"><button class="btn btn-primary">Post open match</button></div></form><div class="buddy-list"><div class="panel-head"><div><h3>Players looking for a buddy</h3><span class="panel-sub">Open matches in the local Pulse community</span></div></div>${state.buddyRequests.map(r=>`<article class="buddy-row"><div><strong>${escapeHTML(r.name)}</strong><span>${escapeHTML(r.level)} · ${prettyDate(r.date)} at ${r.time}</span></div><div class="row-actions"><button class="btn btn-ghost btn-sm" data-buddy-friend="${r.id}">${state.padelFriends.includes(r.id)?"✓ Friend":"Add friend"}</button><button class="btn btn-primary btn-sm" data-buddy-text="${r.id}">Text ${escapeHTML(r.name)}</button></div></article>`).join("")}</div>`, true);
+  return modalShell("Padel players & community", `<p class="panel-sub">Post an open match, find someone at your level, text them, or add them to your Pulse friends.</p><div class="summary-box"><div class="summary-row"><span>Current court session</span><strong>${money(state.businessSettings.padelCourtPrice)} · ${durationLabel(state.businessSettings.padelDurationMinutes)}</strong></div><div class="summary-row"><span>Four-player split (25%)</span><strong>${money(state.businessSettings.padelCourtPrice/4)} each</strong></div></div><form id="buddy-form"><div class="form-grid"><div class="field"><label>Name</label><input name="name" value="${state.session?.type==="member"?"Tanisha Hassija":""}" required placeholder="Your name"></div><div class="field"><label>Phone</label><input name="phone" type="tel" required placeholder="+255 7XX XXX XXX"></div><div class="field"><label>Date</label><input name="date" type="date" min="2026-10-15" value="2026-10-18" required></div><div class="field"><label>Time</label><select name="time"><option>08:00</option><option>10:00</option><option>16:00</option><option>18:00</option><option>20:00</option></select></div><div class="field full"><label>Playing level</label><select name="level"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option><option>Any level</option></select></div></div><div class="form-actions"><button class="btn btn-primary">Post open match</button></div></form><div class="buddy-list"><div class="panel-head"><div><h3>Players looking for a buddy</h3><span class="panel-sub">Open matches in the local Pulse community</span></div></div>${state.buddyRequests.map(r=>`<article class="buddy-row"><div><strong>${escapeHTML(r.name)}</strong><span>${escapeHTML(r.level)} · ${prettyDate(r.date)} at ${r.time}</span></div><div class="row-actions"><button class="btn btn-ghost btn-sm" data-buddy-friend="${r.id}">${state.padelFriends.includes(r.id)?"✓ Friend":"Add friend"}</button><button class="btn btn-primary btn-sm" data-buddy-text="${r.id}">Text ${escapeHTML(r.name)}</button></div></article>`).join("")}</div>`, true);
 }
 
 function padelRankingsModal() {
@@ -337,7 +432,17 @@ function juiceModal() {
 }
 
 function successModal(b) {
-  return modalShell("Booking confirmed", `<div class="success-view"><span class="success-icon">✓</span><h2>You’re booked.</h2><p>A confirmation has been prepared for <strong>${escapeHTML(b.email)}</strong>. Show this booking number at reception.</p><span class="booking-code">${b.id}</span><p>${escapeHTML(b.service)} · ${prettyDate(b.date)} at ${b.time}</p><div class="form-actions" style="justify-content:center"><button class="btn btn-primary" data-action="finish-booking">Back to Pulse</button></div></div>`);
+  const delivery = b.emailDelivery === "sent"
+    ? `Confirmation email requested for <strong>${escapeHTML(b.email)}</strong>.`
+    : b.emailDelivery === "failed"
+      ? `Your booking is saved, but the confirmation email could not be requested. Please keep this booking number.`
+      : `Your booking is saved. Email delivery will activate when the Pulse mail service is connected.`;
+  return modalShell("Booking confirmed", `<div class="success-view"><span class="success-icon">✓</span><h2>You’re booked.</h2><p>${delivery} Show this booking number at reception.</p><span class="booking-code">${b.id}</span><p>${escapeHTML(b.service)} · ${prettyDate(b.date)} at ${b.time}</p><div class="form-actions" style="justify-content:center"><button class="btn btn-ghost" data-action="preview-email" data-id="${b.id}">Preview email</button><button class="btn btn-primary" data-action="finish-booking">Back to Pulse</button></div></div>`);
+}
+
+function emailPreviewModal(b) {
+  if (!b) return infoModal("Email preview", "The booking could not be found.");
+  return modalShell("Confirmation email preview", `<article class="email-preview"><img src="assets/pulse-logo.png" alt="Pulse"><div class="email-preview-kicker">BOOKING CONFIRMED</div><h3>You’re all set, ${escapeHTML(String(b.name).split(" ")[0])}.</h3><p>Your Pulse reservation is confirmed. Keep the check-in number below and show it at reception when you arrive.</p><div class="email-booking-code">${escapeHTML(b.id)}</div><dl><div><dt>Experience</dt><dd>${escapeHTML(b.service)}</dd></div><div><dt>Date</dt><dd>${prettyDate(b.date)}</dd></div><div><dt>Time</dt><dd>${escapeHTML(b.time)}${b.durationMinutes?` · ${durationLabel(b.durationMinutes)}`:""}</dd></div><div><dt>Payment</dt><dd>${escapeHTML(b.paymentStatus)}</dd></div></dl><p class="email-policy">Stretch and Padel cancellations require at least 24 hours’ notice.</p></article><div class="form-actions"><button class="btn btn-primary" data-action="close-modal">Done</button></div>`);
 }
 
 function trainersModal() {
@@ -369,9 +474,12 @@ function modalView() {
   if (type === "booking") return bookingModal(data);
   if (type === "payment") return paymentModal(data);
   if (type === "success") return successModal(data);
+  if (type === "email-preview") return emailPreviewModal(state.bookings.find(b=>b.id===data.id));
   if (type === "calendar") return calendarModal(data.category);
   if (type === "bookings") return bookingsModal();
   if (type === "manage-booking") return manageBookingModal(state.bookings.find(b=>b.id===data.id));
+  if (type === "gym-class") return gymClassModal(state.gymSchedule.find(item=>item.id===data?.id));
+  if (type === "delete-gym-class") return deleteGymClassModal(state.gymSchedule.find(item=>item.id===data?.id));
   if (type === "buddy") return buddyModal();
   if (type === "padel-rankings") return padelRankingsModal();
   if (type === "padel-promotions") return padelPromotionsModal();
@@ -386,12 +494,13 @@ function modalView() {
 }
 
 function adminView() {
-  return `<div class="admin-shell"><aside class="admin-side">${logo()}<nav class="admin-menu">${[["overview","▦","Overview"],["bookings","◫","Bookings"],["trainers","◎","Trainers"],["members","●","Members"],["payments","◇","Payments"],["integrations","⌁","Integrations"]].map(([r,i,l])=>`<button class="admin-link ${state.adminRoute===r?"active":""}" data-admin-route="${r}"><span>${i}</span>${l}</button>`).join("")}</nav><button class="admin-link signout" data-action="exit-admin">← Customer app</button></aside><main class="admin-main">${adminContent()}</main></div>${modalView()}`;
+  return `<div class="admin-shell"><aside class="admin-side">${logo()}<nav class="admin-menu">${[["overview","▦","Overview"],["bookings","◫","Bookings"],["trainers","◎","Trainers"],["operations","⚙","Schedule & courts"],["members","●","Members"],["payments","◇","Payments"],["integrations","⌁","Integrations"]].map(([r,i,l])=>`<button class="admin-link ${state.adminRoute===r?"active":""}" data-admin-route="${r}"><span>${i}</span>${l}</button>`).join("")}</nav><button class="admin-link signout" data-action="exit-admin">← Customer app</button></aside><main class="admin-main">${adminContent()}</main></div>${modalView()}`;
 }
 
 function adminContent() {
   if (state.adminRoute === "bookings") return bookingAdmin();
   if (state.adminRoute === "trainers") return trainerAdmin();
+  if (state.adminRoute === "operations") return operationsAdmin();
   if (["members","payments","integrations"].includes(state.adminRoute)) return settingsAdmin(state.adminRoute);
   const paid = state.bookings.filter(b=>b.paymentStatus === "Paid").reduce((s,b)=>s+b.amount,0);
   const due = state.bookings.filter(b=>b.paymentStatus.includes("Due") || b.paymentStatus.includes("due")).reduce((s,b)=>s+b.amount,0);
@@ -411,11 +520,29 @@ function bookingAdmin() {
 
 function bookingTable(rows) {
   if (!rows.length) return `<div class="empty">No bookings match this filter.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>`<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${b.id} · ${b.category}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${b.id}">Email</button><button class="text-link" data-contact="sms" data-id="${b.id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${b.time}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${b.id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${b.id}">Check in</button>${staffCanCancel(b)?`<button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${b.id}">Cancel</button>`:""}`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${b.id}">Collect fee</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>`<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${b.id} · ${b.category}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${b.id}">Email</button><button class="text-link" data-contact="sms" data-id="${b.id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${b.time}${b.durationMinutes?` · ${durationLabel(b.durationMinutes)}`:""}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${b.id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${b.id}">Check in</button>${staffCanCancel(b)?`<button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${b.id}">Cancel</button>`:""}`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${b.id}">Collect fee</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function trainerAdmin() {
   return `<header class="admin-top"><div><h1>Trainer requests</h1><p>Review goals and match members with the right coach.</p></div></header><section class="admin-panel"><div class="table-wrap"><table><thead><tr><th>Member</th><th>Goal</th><th>Preferred meeting</th><th>Trainer</th><th>Status</th><th>Actions</th></tr></thead><tbody>${state.trainerRequests.map(r=>`<tr><td><div class="cell-main">${escapeHTML(r.name)}</div><div class="cell-sub">${escapeHTML(r.email || "")}</div><div class="cell-sub">${escapeHTML(r.phone)}</div></td><td>${escapeHTML(r.goal)}</td><td><div class="cell-main">${r.date ? prettyDate(r.date) : "Flexible"}</div><div class="cell-sub">${escapeHTML(r.time || "Any time")}</div></td><td>${escapeHTML(r.trainer)}</td><td><span class="status ${r.status==="Pending"?"pending":""}">${r.status}</span></td><td><div class="row-actions">${r.status==="Pending"?`<button class="btn btn-primary btn-sm" data-trainer-action="accept" data-id="${r.id}">Accept</button><button class="btn btn-danger btn-sm" data-trainer-action="decline" data-id="${r.id}">Decline</button>`:"—"}</div></td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+function operationsAdmin() {
+  const classes=[...state.gymSchedule].sort((a,b)=>`${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  return `<header class="admin-top"><div><h1>Schedule & courts</h1><p>Control Padel booking rules and the Gym class calendar shown to clients.</p></div><button class="btn btn-primary" data-action="new-gym-class">＋ Add class</button></header>
+    <section class="admin-grid operations-grid"><div class="admin-panel"><div class="panel-head"><div><h2>Padel court settings</h2><span class="panel-sub">Changes regenerate future booking blocks immediately.</span></div></div><form id="business-settings-form"><div class="form-grid"><div class="field"><label>Price per court session (TZS)</label><input name="padelCourtPrice" type="number" min="0" step="1000" value="${state.businessSettings.padelCourtPrice}" required></div><div class="field"><label>Booking length (minutes)</label><input name="padelDurationMinutes" type="number" min="30" max="480" step="15" value="${state.businessSettings.padelDurationMinutes}" required><small>Any 15-minute interval from 30 minutes to 8 hours.</small></div></div><div class="summary-box"><div class="summary-row"><span>Current session rate</span><strong>${money(state.businessSettings.padelCourtPrice)}</strong></div><div class="summary-row"><span>Each playing slot</span><strong>${durationLabel(state.businessSettings.padelDurationMinutes)}</strong></div><div class="summary-row"><span>Four-player split (25%)</span><strong>${money(state.businessSettings.padelCourtPrice/4)} each</strong></div></div><div class="form-actions"><button class="btn btn-primary">Save & rebuild calendar</button></div></form></div>
+    <div class="admin-panel"><h2>Booking integrity</h2><p class="panel-sub">New blocks are rebuilt from opening time using the active duration. They remain disabled wherever they overlap a confirmed booking.</p><div class="activity"><span class="activity-mark"></span><div><p>Overlap protection is active</p><time>Same court + overlapping time is blocked</time></div></div><div class="activity"><span class="activity-mark" style="background:var(--stretch)"></span><div><p>Existing bookings are locked</p><time>Original price and duration never recalculate</time></div></div></div></section>
+    <section class="admin-panel schedule-admin"><div class="panel-head"><div><h2>Pulse Gym weekly schedule</h2><span class="panel-sub">Official Pulse classes only. Hidden classes disappear from customer booking.</span></div><button class="btn btn-ghost btn-sm" data-action="new-gym-class">Add class</button></div><div class="table-wrap"><table><thead><tr><th>Day</th><th>Class</th><th>Instructor</th><th>Time</th><th>Capacity</th><th>Visibility</th><th></th></tr></thead><tbody>${classes.map(item=>`<tr><td><div class="cell-main">${prettyDate(item.date)}</div></td><td class="cell-main">${escapeHTML(item.name)}</td><td>${escapeHTML(item.trainer)}</td><td>${item.time}–${item.endTime || ""}</td><td>${item.capacity}</td><td><span class="status ${item.active?"confirmed":"cancelled"}">${item.active?"Live":"Hidden"}</span></td><td><button class="btn btn-ghost btn-sm" data-action="edit-gym-class" data-id="${item.id}">Manage</button></td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+function gymClassModal(item) {
+  const d=item || {id:"",date:"2026-10-16",time:"18:00",endTime:"19:00",name:"",trainer:"",capacity:14,price:25000,active:true};
+  return modalShell(item?"Manage Gym class":"Add Gym class", `<form id="gym-class-form"><input type="hidden" name="id" value="${escapeHTML(d.id)}"><div class="form-grid"><div class="field full"><label>Class name</label><input name="name" value="${escapeHTML(d.name)}" required placeholder="For example: Spinning"></div><div class="field"><label>Date</label><input name="date" type="date" value="${d.date}" required></div><div class="field"><label>Instructor</label><input name="trainer" value="${escapeHTML(d.trainer)}" required></div><div class="field"><label>Start time</label><input name="time" type="time" value="${d.time}" required></div><div class="field"><label>End time</label><input name="endTime" type="time" value="${d.endTime || ""}" required></div><div class="field"><label>Capacity</label><input name="capacity" type="number" min="1" value="${d.capacity}" required></div><div class="field"><label>Price (TZS)</label><input name="price" type="number" min="0" step="1000" value="${d.price}" required></div><div class="field full"><label class="toggle-field"><input name="active" type="checkbox" ${d.active?"checked":""}> Show this class to clients</label></div></div><div class="form-actions">${item?`<button type="button" class="btn btn-danger" data-action="delete-gym-class" data-id="${item.id}">Delete class</button>`:""}<button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button><button class="btn btn-primary">Save class</button></div></form>`);
+}
+
+function deleteGymClassModal(item) {
+  if(!item) return infoModal("Class not found","This class is no longer in the schedule.");
+  return modalShell("Delete class", `<p class="panel-sub">Remove <strong>${escapeHTML(item.name)}</strong> on ${prettyDate(item.date)} from the weekly Gym schedule? Existing customer bookings remain in the booking records.</p><div class="form-actions"><button class="btn btn-ghost" data-action="edit-gym-class" data-id="${item.id}">Keep class</button><button class="btn btn-danger" data-action="confirm-delete-gym-class" data-id="${item.id}">Delete class</button></div>`);
 }
 
 function settingsAdmin(route) {
@@ -463,6 +590,8 @@ function bindEvents() {
   document.getElementById("juice-form")?.addEventListener("submit", juiceSubmit);
   document.getElementById("match-result-form")?.addEventListener("submit", matchResultSubmit);
   document.getElementById("event-register-form")?.addEventListener("submit", eventRegisterSubmit);
+  document.getElementById("business-settings-form")?.addEventListener("submit", businessSettingsSubmit);
+  document.getElementById("gym-class-form")?.addEventListener("submit", gymClassSubmit);
   document.querySelector(".modal-backdrop")?.addEventListener("click", e => { if(e.target.classList.contains("modal-backdrop")) setState({modal:null},false); });
 }
 
@@ -479,10 +608,10 @@ function handleAction(action, el, e) {
   if (action === "open-signin" || action === "switch-member") return setState({modal:{type:"signin"}},false);
   if (action === "close-modal") return setState({modal:null},false);
   if (action === "profile") return setState({modal:{type:"profile"}},false);
-  if (action === "signout") return setState({...defaultState,bookings:state.bookings,trainerRequests:state.trainerRequests,buddyRequests:state.buddyRequests,padelRankings:state.padelRankings,padelMatches:state.padelMatches,padelEvents:state.padelEvents,padelPromotions:state.padelPromotions,claimedPromotions:state.claimedPromotions,padelFriends:state.padelFriends,activities:state.activities});
+  if (action === "signout") return setState({...defaultState,bookings:state.bookings,trainerRequests:state.trainerRequests,buddyRequests:state.buddyRequests,padelRankings:state.padelRankings,padelMatches:state.padelMatches,padelEvents:state.padelEvents,padelPromotions:state.padelPromotions,claimedPromotions:state.claimedPromotions,padelFriends:state.padelFriends,activities:state.activities,gymSchedule:state.gymSchedule,businessSettings:state.businessSettings});
   if (action === "open-admin") return setState({adminReturn:state.session?.type || "guest",modal:{type:"admin-signin"}},false);
   if (action === "exit-admin") return setState({session:{type:state.adminReturn || "guest"},route:"home",modal:null});
-  if (action === "book") return setState({modal:{type:"booking",data:{category:data.category,service:data.service,time:data.time,date:data.date}}},false);
+  if (action === "book") return setState({modal:{type:"booking",data:{category:data.category,service:data.service,time:data.time,date:data.date,classId:data.classId || "",amount:Number(data.amount)||undefined,durationMinutes:Number(data.duration)||undefined}}},false);
   if (action === "quick-book" || action === "admin-new-booking") return setState({modal:{type:"booking",data:{}}},false);
   if (action === "renew") return setState({modal:{type:"booking",data:{category:"Gym",service:"Pulse Unlimited membership renewal",amount:180000}}},false);
   if (action === "trainers") return setState({modal:{type:"trainers"}},false);
@@ -494,8 +623,18 @@ function handleAction(action, el, e) {
   if (action === "trainer-form") return setState({modal:{type:"trainer-form",data:{trainer:data.trainer}}},false);
   if (action === "back-booking") return setState({modal:{type:"booking",data:state.bookingDraft}},false);
   if (action === "finish-booking") { setState({modal:null,route:"home"}); return requestAnimationFrame(() => window.scrollTo({top:0,left:0})); }
+  if (action === "preview-email") return setState({modal:{type:"email-preview",data:{id:data.id}}},false);
   if (action === "view-bookings") return setState({modal:{type:"bookings"}},false);
   if (action === "calendar") return setState({modal:{type:"calendar",data:{category:data.category || "Gym"}}},false);
+  if (action === "new-gym-class") return setState({modal:{type:"gym-class",data:{}}},false);
+  if (action === "edit-gym-class") return setState({modal:{type:"gym-class",data:{id:data.id}}},false);
+  if (action === "delete-gym-class") return setState({modal:{type:"delete-gym-class",data:{id:data.id}}},false);
+  if (action === "confirm-delete-gym-class") {
+    const item=state.gymSchedule.find(entry=>entry.id===data.id);
+    state.gymSchedule=state.gymSchedule.filter(entry=>entry.id!==data.id);
+    state.activities=[{text:`Gym class removed: ${item?.name || data.id}`,time:"Just now"},...state.activities];
+    state.modal=null; saveState(); render(); return toast("Class deleted","It has been removed from customer booking.");
+  }
   if (info[action]) return setState({modal:{type:"info",data:info[action]}},false);
 }
 
@@ -504,16 +643,22 @@ function bookingSubmit(e) {
   const form = new FormData(e.target);
   const draft = { ...state.bookingDraft, ...Object.fromEntries(form.entries()) };
   const serviceDetails = {
-    "Fitness class":["Gym",25000], "Private Stretch":["Stretch",35000], "Stretch class":["Stretch",30000],
-    "Court 1":["Padel",40000], "Court 2":["Padel",40000], "Court 3":["Padel",40000], "Gym day pass":["Gym",30000], "Pulse Unlimited membership renewal":["Gym",180000]
+    "Reformer Foundations":["Stretch",30000], "Reformer Sculpt":["Stretch",30000], "Premium Mat Pilates":["Stretch",30000], "Reformer Flow":["Stretch",30000],
+    "Gym day pass":["Gym",30000], "Pulse Unlimited membership renewal":["Gym",180000]
   };
   const mapped = serviceDetails[draft.service];
   if (mapped) { draft.category = mapped[0]; draft.amount = mapped[1]; }
-  else draft.amount = Number(state.bookingDraft.amount || (draft.category === "Padel" ? 40000 : draft.category === "Stretch" ? 35000 : 25000));
+  if(courtNumber(draft.service)) { draft.category="Padel"; draft.amount=state.businessSettings.padelCourtPrice; }
+  const gymClass=state.gymSchedule.find(item=>item.id===draft.classId&&item.active);
+  if(draft.category==="Gym" && draft.classId) {
+    if(!gymClass || gymClass.name!==draft.service) return setState({modal:{type:"booking",data:{...draft,error:"That Pulse class is no longer available. Please choose another class from the Gym schedule."}}},false);
+    Object.assign(draft,{date:gymClass.date,time:gymClass.time,amount:Number(gymClass.price)});
+  } else draft.amount = Number(state.bookingDraft.amount || (draft.category === "Padel" ? state.businessSettings.padelCourtPrice : draft.category === "Stretch" ? 35000 : 25000));
+  if(draft.category==="Padel") draft.durationMinutes=Number(state.bookingDraft.durationMinutes || state.businessSettings.padelDurationMinutes);
   if (draft.category === "Padel" && state.session?.type === "member" && state.claimedPromotions.includes("PROMO-OFFPEAK") && Number(draft.time.split(":")[0]) < 16) {
     draft.amount = Math.round(draft.amount * .8); draft.promotion="PULSE20";
   }
-  if (draft.category === "Padel" && courtIsBooked(draft.service,draft.date,draft.time)) {
+  if (draft.category === "Padel" && courtIsBooked(draft.service,draft.date,draft.time,"",draft.durationMinutes)) {
     return setState({modal:{type:"booking",data:{...draft,error:"That court has just been booked. Please choose another court or time."}}},false);
   }
   state.bookingDraft = draft;
@@ -521,16 +666,39 @@ function bookingSubmit(e) {
   else setState({modal:{type:"payment",data:draft}},false);
 }
 
-function adminSignInSubmit(e) {
+function businessSettingsSubmit(e) {
   e.preventDefault();
   const fields=Object.fromEntries(new FormData(e.target).entries());
-  if (String(fields.email).trim().toLowerCase() !== "admin@admin.com" || fields.password !== "12345678") {
+  try {
+    PulseConfigController.update({padelCourtPrice:Number(fields.padelCourtPrice),padelDurationMinutes:Number(fields.padelDurationMinutes)});
+  } catch(error) {
+    return toast("Settings not saved",String(error.message || error));
+  }
+  state.activities=[{text:`Padel slots updated to ${durationLabel(state.businessSettings.padelDurationMinutes)} at ${money(state.businessSettings.padelCourtPrice)}`,time:"Just now"},...state.activities];
+  saveState(); render(); toast("Court settings saved","The calendar was rebuilt. Existing reservations kept their original terms.");
+}
+
+function gymClassSubmit(e) {
+  e.preventDefault();
+  const form=new FormData(e.target), fields=Object.fromEntries(form.entries());
+  const record={id:fields.id || `GC-${Date.now().toString().slice(-6)}`,name:String(fields.name).trim(),date:fields.date,time:fields.time,endTime:fields.endTime,trainer:String(fields.trainer).trim(),capacity:Number(fields.capacity),price:Number(fields.price),active:form.has("active")};
+  const index=state.gymSchedule.findIndex(item=>item.id===record.id);
+  if(index>=0) state.gymSchedule[index]=record; else state.gymSchedule=[...state.gymSchedule,record];
+  state.activities=[{text:`Gym schedule updated: ${record.name} on ${prettyDate(record.date)}`,time:"Just now"},...state.activities];
+  state.modal=null; saveState(); render(); toast("Class schedule saved",record.active?"The class is live in Gym booking.":"The class is hidden from clients.");
+}
+
+async function adminSignInSubmit(e) {
+  e.preventDefault();
+  const fields=Object.fromEntries(new FormData(e.target).entries());
+  const passwordHash=await sha256(fields.password);
+  if (String(fields.email).trim().toLowerCase() !== String(window.PULSE_CONFIG?.adminEmail || "").toLowerCase() || passwordHash !== window.PULSE_CONFIG?.adminPasswordSha256) {
     const error=document.getElementById("admin-login-error");
     if(error) error.textContent="Incorrect email or password.";
     return;
   }
   setState({session:{type:"admin"},modal:null,adminRoute:"overview"});
-  toast("Admin portal opened","Signed in as admin@admin.com.");
+  toast("Admin portal opened",`Signed in as ${window.PULSE_CONFIG.adminEmail}.`);
 }
 
 function paymentSubmit(e) {
@@ -542,15 +710,47 @@ function paymentSubmit(e) {
 
 function finalizeBooking(paid) {
   const d = state.bookingDraft;
-  if (d.category === "Padel" && courtIsBooked(d.service,d.date,d.time)) {
+  if (d.category === "Padel" && courtIsBooked(d.service,d.date,d.time,"",d.durationMinutes)) {
     return setState({modal:{type:"booking",data:{...d,error:"That court is no longer available. No payment was taken."}}},false);
   }
-  const booking = { id:uid(), service:d.service, category:d.category || "Gym", date:d.date, time:d.time, name:d.name, email:d.email, phone:d.phone, payment:paid?"Paid in app":"Pay on arrival", paymentMethod:paid?(d.paymentMethod || "Mobile money"):"Reception", amount:Number(d.amount), status:"Confirmed", paymentStatus:paid?"Paid":"Due" };
+  const booking = { id:uid(), service:d.service, category:d.category || "Gym", classId:d.classId || "", date:d.date, time:d.time, durationMinutes:d.category==="Padel"?Number(d.durationMinutes || state.businessSettings.padelDurationMinutes):null, name:d.name, email:d.email, phone:d.phone, payment:paid?"Paid in app":"Pay on arrival", paymentMethod:paid?(d.paymentMethod || "Mobile money"):"Reception", amount:Number(d.amount), status:"Confirmed", paymentStatus:paid?"Paid":"Due", emailDelivery:emailEndpoint?"sending":"not-configured" };
   state.bookings = [...state.bookings,booking];
   state.activities = [{text:`${booking.name} booked ${booking.service}`,time:"Just now"},...state.activities];
   state.modal = {type:"success",data:booking};
   saveState(); render();
   toast(paid ? "Payment approved" : "Booking reserved", paid ? "Selcom demo payment completed." : "Payment is due at reception.");
+  if (emailEndpoint) sendBookingEmail(booking);
+}
+
+async function sendBookingEmail(booking) {
+  try {
+    const body = new URLSearchParams({
+      type:"booking-confirmation",
+      bookingId:booking.id,
+      name:booking.name,
+      email:booking.email,
+      phone:booking.phone,
+      service:booking.service,
+      category:booking.category,
+      date:booking.date,
+      time:booking.time,
+      duration:booking.durationMinutes?durationLabel(booking.durationMinutes):"",
+      amount:String(booking.amount),
+      paymentMethod:booking.paymentMethod || booking.payment || "",
+      paymentStatus:booking.paymentStatus,
+      website:""
+    });
+    await fetch(emailEndpoint, { method:"POST", mode:"no-cors", body });
+    booking.emailDelivery = "sent";
+    saveState();
+    if (state.modal?.type === "success" && state.modal.data.id === booking.id) { state.modal.data = booking; render(); }
+    toast("Confirmation email requested", `Sent through Pulse Mail for ${booking.email}.`);
+  } catch (error) {
+    booking.emailDelivery = "failed";
+    saveState();
+    if (state.modal?.type === "success" && state.modal.data.id === booking.id) { state.modal.data = booking; render(); }
+    toast("Email unavailable", "The booking is safe. Please keep the booking number.");
+  }
 }
 
 function trainerSubmit(e) {
@@ -638,6 +838,7 @@ function manageBookingSubmit(e) {
   const fields=Object.fromEntries(new FormData(e.target).entries());
   const b=state.bookings.find(x=>x.id===fields.id); if(!b) return;
   if(fields.status==="Cancelled" && !staffCanCancel(b)) return toast("Cancellation unavailable","Pulse does not cancel Padel courts.");
+  if(b.category==="Padel" && courtIsBooked(fields.service,fields.date,fields.time,b.id,b.durationMinutes || 90)) return toast("Court unavailable","That time overlaps another booking on the same court.");
   Object.assign(b,{service:fields.service,date:fields.date,time:fields.time,status:fields.status,paymentStatus:fields.paymentStatus});
   state.activities=[{text:`${b.id} edited by admin`,time:"Just now"},...state.activities];
   state.modal=null; saveState(); render(); toast("Booking updated",`${b.id} changes have been saved.`);

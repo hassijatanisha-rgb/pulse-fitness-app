@@ -735,14 +735,30 @@ button { -webkit-tap-highlight-color: transparent; }
   background:#fff;
   box-shadow:0 0 0 4px rgba(22,119,255,.13);
 }
+.field small { display:block; margin-top:7px; color:var(--muted); font-size:12px; line-height:1.45; }
 .segment.selected { background:#f1f6ff; border-color:var(--pulse); box-shadow:inset 0 0 0 1px var(--pulse); }
 .success-icon { border-radius:25px; background:var(--pulse); box-shadow:0 16px 36px rgba(22,119,255,.26); }
 .booking-code { border-radius:16px; }
+.email-preview { overflow:hidden; border-radius:24px; background:#0d0f0d; color:#fff; padding:32px; text-align:left; }
+.email-preview img { width:138px; height:auto; margin-bottom:42px; }
+.email-preview-kicker { color:#7db4ff; font-size:11px; font-weight:750; letter-spacing:.16em; }
+.email-preview h3 { margin:9px 0 14px; font-size:34px; line-height:1.05; }
+.email-preview p { color:rgba(255,255,255,.68); line-height:1.6; }
+.email-booking-code { display:inline-block; margin:20px 0; padding:13px 16px; border-radius:12px; background:#fff; color:#111; font-weight:780; letter-spacing:.09em; }
+.email-preview dl { margin:10px 0 0; border-top:1px solid rgba(255,255,255,.14); }
+.email-preview dl div { display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.14); }
+.email-preview dt { color:rgba(255,255,255,.52); }
+.email-preview dd { margin:0; font-weight:650; text-align:right; }
+.email-preview .email-policy { margin:18px 0 0; font-size:12px; }
 
 .admin-shell { background:#f1f2ef; grid-template-columns:260px 1fr; }
 .admin-side { background:linear-gradient(180deg,#101210,#070807); border-right:1px solid rgba(255,255,255,.08); }
 .admin-link { border-radius:12px; font-family:inherit; font-weight:650; letter-spacing:.01em; text-transform:none; }
 .admin-link.active { box-shadow:0 8px 24px rgba(0,0,0,.24); }
+.operations-grid { margin-bottom:16px; }
+.schedule-admin { margin-top:16px; }
+.toggle-field { display:flex; align-items:center; gap:10px; min-height:50px; padding:0 4px; cursor:pointer; }
+.toggle-field input { width:20px; min-height:20px; accent-color:var(--pulse); }
 .metric, .admin-panel { background:rgba(255,255,255,.9); box-shadow:0 12px 36px rgba(17,19,17,.055); }
 .metric strong { font-weight:740; }
 .filter { min-height:36px; font-weight:650; }
