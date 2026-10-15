@@ -5,17 +5,25 @@ const icons = {
 
 const emailEndpoint = String(window.PULSE_CONFIG?.bookingEmailEndpoint || "").trim();
 const backendEndpoint = emailEndpoint;
+const trustedBackendOrigins = new Set([
+  "https://script.google.com",
+  "https://script.googleusercontent.com"
+]);
 let adminRefreshTimer = null;
+
+function isTrustedBackendOrigin(origin="") {
+  return trustedBackendOrigins.has(origin) || /^https:\/\/[a-z0-9-]+\.script\.googleusercontent\.com$/i.test(origin);
+}
 
 function backendPost(fields, timeoutMs=20000) {
   if (!backendEndpoint) return Promise.reject(new Error("Pulse cloud service is not configured."));
   return new Promise((resolve,reject)=>{
-    const requestId=`pulse-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId=`pulse-${crypto.randomUUID()}`;
     const frame=document.createElement("iframe"), form=document.createElement("form");
     const cleanup=()=>{ window.removeEventListener("message",onMessage); clearTimeout(timer); form.remove(); setTimeout(()=>frame.remove(),0); };
     const onMessage=event=>{
       const data=event.data;
-      if(!data || data.source!=="pulse-backend" || data.requestId!==requestId) return;
+      if(!isTrustedBackendOrigin(event.origin) || !data || data.source!=="pulse-backend" || data.requestId!==requestId) return;
       cleanup(); resolve(data);
     };
     const timer=setTimeout(()=>{ cleanup(); reject(new Error("Pulse cloud service did not respond. Try again.")); },timeoutMs);
@@ -209,6 +217,7 @@ function uid(prefix="PLS") {
   return `${prefix}-${highest + 1}`;
 }
 function escapeHTML(value="") { return String(value).replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
+function safeClass(value="") { return String(value).toLowerCase().replace(/[^a-z0-9_-]/g, ""); }
 async function sha256(value="") {
   const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(value)));
   return [...new Uint8Array(bytes)].map(byte=>byte.toString(16).padStart(2,"0")).join("");
@@ -348,7 +357,7 @@ function serviceCard(route, title, desc, index, label) {
 
 function bookingMini(b) {
   const d = new Date(`${b.date}T12:00:00`);
-  return `<div class="booking-mini"><span class="date-chip">${d.getDate()}<small>${d.toLocaleDateString("en-TZ",{month:"short"})}</small></span><div><strong>${escapeHTML(b.service)}</strong><span>${b.time} · ${b.id}</span></div><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></div>`;
+  return `<div class="booking-mini"><span class="date-chip">${d.getDate()}<small>${d.toLocaleDateString("en-TZ",{month:"short"})}</small></span><div><strong>${escapeHTML(b.service)}</strong><span>${escapeHTML(b.time)} · ${escapeHTML(b.id)}</span></div><span class="status ${safeClass(b.status)}">${escapeHTML(b.status)}</span></div>`;
 }
 
 function categoryHero(kind, kicker, title, body) {
@@ -543,7 +552,7 @@ function profileModal() {
 }
 
 function infoModal(title, body) { return modalShell(title, `<p style="line-height:1.7;color:var(--muted)">${body}</p><div class="form-actions"><button class="btn btn-primary" data-action="close-modal">Got it</button></div>`); }
-function modalShell(title, body, wide=false) { return `<div class="modal-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}"><section class="modal ${wide?"wide":""}"><header class="modal-head"><h2>${title}</h2><button class="close-btn" data-action="close-modal" aria-label="Close">×</button></header><div class="modal-body">${body}</div></section></div>`; }
+function modalShell(title, body, wide=false) { return `<div class="modal-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}"><section class="modal ${wide?"wide":""}"><header class="modal-head"><h2>${escapeHTML(title)}</h2><button class="close-btn" data-action="close-modal" aria-label="Close">×</button></header><div class="modal-body">${body}</div></section></div>`; }
 
 function modalView() {
   if (!state.modal) return "";
@@ -599,7 +608,7 @@ function bookingAdmin() {
 
 function bookingTable(rows) {
   if (!rows.length) return `<div class="empty">No bookings match this filter.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>`<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${b.id} · ${b.category}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${b.id}">Email</button><button class="text-link" data-contact="sms" data-id="${b.id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${b.time}${b.durationMinutes?` · ${durationLabel(b.durationMinutes)}`:""}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${b.id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${b.id}">Check in</button>${staffCanCancel(b)?`<button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${b.id}">Cancel</button>`:""}`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${b.id}">Collect fee</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>{const id=escapeHTML(b.id);return `<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${id} · ${escapeHTML(b.category)}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${id}">Email</button><button class="text-link" data-contact="sms" data-id="${id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${escapeHTML(b.time)}${b.durationMinutes?` · ${durationLabel(b.durationMinutes)}`:""}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${safeClass(b.status)}">${escapeHTML(b.status)}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${id}">Check in</button>${staffCanCancel(b)?`<button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${id}">Cancel</button>`:""}`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${id}">Collect fee</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div>`;
 }
 
 function trainerAdmin() {
@@ -838,11 +847,13 @@ async function finalizeBooking(paid) {
   const booking = { id:uid(), service:d.service, category:d.category || "Gym", classId:d.classId || "", date:d.date, time:d.time, durationMinutes:d.category==="Padel"?Number(d.durationMinutes || state.businessSettings.padelDurationMinutes):null, name:d.name, email:d.email, phone:d.phone, payment:paid?"Paid in app demo":"Pay on arrival", paymentMethod:paid?(d.paymentMethod || "Mobile money demo"):"Reception", amount:Number(d.amount), status:"Confirmed", paymentStatus:paid?"Paid (demo)":"Due", emailDelivery:"sending" };
   let result;
   try {
-    result=await backendPost({action:"booking-create",type:"booking-confirmation",bookingId:booking.id,name:booking.name,email:booking.email,phone:booking.phone,service:booking.service,category:booking.category,date:booking.date,time:booking.time,duration:booking.durationMinutes?durationLabel(booking.durationMinutes):"",durationMinutes:booking.durationMinutes || "",amount:booking.amount,paymentMethod:booking.paymentMethod,paymentStatus:booking.paymentStatus,classId:booking.classId,website:""},30000);
+    result=await backendPost({action:"booking-create",type:"booking-confirmation",bookingId:booking.id,name:booking.name,email:booking.email,phone:booking.phone,service:booking.service,category:booking.category,date:booking.date,time:booking.time,duration:booking.durationMinutes?durationLabel(booking.durationMinutes):"",durationMinutes:booking.durationMinutes || "",amount:booking.amount,paymentMethod:booking.paymentMethod,paymentStatus:booking.paymentStatus,classId:booking.classId,promotion:d.promotion || "",website:""},30000);
   } catch(error) { result={ok:false,error:String(error.message || error)}; }
   if(!result.ok) {
     return setState({modal:{type:"booking",data:{...d,error:result.error || "The reservation could not be saved. Please try again."}}},false);
   }
+  booking.amount=Number(result.amount ?? booking.amount);
+  booking.paymentStatus=result.paymentStatus || booking.paymentStatus;
   booking.emailDelivery=result.emailSent?"sent":"failed";
   state.bookings = [...state.bookings,booking];
   if(booking.category==="Padel") state.remoteBusyPadel=[...(state.remoteBusyPadel || []),booking];

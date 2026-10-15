@@ -1,4 +1,5 @@
 const PULSE_TIMEZONE = 'Africa/Dar_es_Salaam';
+const PULSE_CLIENT_ORIGIN = 'https://hassijatanisha-rgb.github.io';
 const DAILY_SEND_LIMIT = 100;
 const BOOKING_SHEET_NAME = 'Reservations';
 const CLASS_SHEET_NAME = 'Gym Schedule';
@@ -6,6 +7,11 @@ const BOOKING_HEADERS = ['Created at','Booking ID','Name','Email','Phone','Categ
 const CLASS_HEADERS = ['ID','Name','Date','Start time','End time','Instructor','Capacity','Price TZS','Active'];
 const ADMIN_EMAIL = 'admin@admin.com';
 const ADMIN_PASSWORD_SHA256 = PropertiesService.getScriptProperties().getProperty('PULSE_ADMIN_PASSWORD_SHA256');
+const BOOKING_CATALOG = {
+  'Gym': {'Gym day pass':30000,'Pulse Unlimited membership renewal':180000},
+  'Stretch': {'Reformer Foundations':30000,'Reformer Sculpt':30000,'Premium Mat Pilates':30000,'Reformer Flow':30000},
+  'Juice Bar': {'Green Machine · Juice Bar preorder':12000,'Berry Recovery · Juice Bar preorder':14000,'Protein Power · Juice Bar preorder':16000,'Cold-Pressed Orange · Juice Bar preorder':10000}
+};
 const DEFAULT_SETTINGS = { padelCourtPrice:40000, padelDurationMinutes:90, padelCourtCount:3, weekdayOpeningTime:'05:00', weekdayClosingTime:'21:00', weekendOpeningTime:'07:00', weekendClosingTime:'19:00' };
 const DEFAULT_GYM_CLASSES = [
   ['GC-11','Fusion – TRX','2026-10-16','06:30','07:30','Karim',14,25000,true],['GC-12','Circuit','2026-10-16','18:00','19:00','Mussa',14,25000,true],['GC-13','Aerobics','2026-10-16','18:00','19:00','Leah',14,25000,true],['GC-14','Aerial Hoop','2026-10-16','18:30','19:30','Selam',14,25000,true],
@@ -49,35 +55,74 @@ function doPost(e) {
 
 function createBooking_(data) {
   if (data.website) return { ok:false, error:'Invalid request' };
-  const required = ['bookingId','name','email','service','date','time','paymentStatus'];
-  required.forEach(function(field) { if (!String(data[field] || '').trim()) throw new Error('Missing ' + field); });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) throw new Error('Invalid email');
-  if (!/^PLS-\d{8,}$/.test(data.bookingId)) throw new Error('Invalid booking number');
+  const booking = validatedBooking_(data);
 
   const sheet = bookingSheet_();
-  const existingRow = bookingRow_(sheet, data.bookingId);
-  if (existingRow) return { ok:true, bookingId:data.bookingId, duplicate:true, emailSent:String(sheet.getRange(existingRow, 14).getValue()) === 'Sent' };
-  const durationMinutes = Number(data.durationMinutes || 0);
-  if (String(data.category) === 'Padel' && bookingConflict_(sheet, data.service, data.date, data.time, durationMinutes || 90, '')) {
+  const existingRow = bookingRow_(sheet, booking.bookingId);
+  if (existingRow) return { ok:true, bookingId:booking.bookingId, duplicate:true, emailSent:String(sheet.getRange(existingRow, 14).getValue()) === 'Sent' };
+  if (booking.category === 'Padel' && bookingConflict_(sheet, booking.service, booking.date, booking.time, booking.durationMinutes, '')) {
     return { ok:false, conflict:true, error:'That court was just booked. Choose another court or time.' };
   }
+  if (booking.classId && classCapacityReached_(sheet, booking.classId, booking.capacity)) return { ok:false, error:'That class is full. Choose another class.' };
 
   const row = sheet.getLastRow() + 1;
   sheet.getRange(row, 1, 1, BOOKING_HEADERS.length).setValues([[
-    Utilities.formatDate(new Date(), PULSE_TIMEZONE, 'yyyy-MM-dd HH:mm:ss'), data.bookingId, clean_(data.name), clean_(data.email), clean_(data.phone), clean_(data.category), clean_(data.service), clean_(data.date), clean_(data.time), clean_(data.duration), Number(data.amount || 0), clean_(data.paymentMethod), clean_(data.paymentStatus), 'Queued', durationMinutes, 'Confirmed', clean_(data.classId)
+    Utilities.formatDate(new Date(), PULSE_TIMEZONE, 'yyyy-MM-dd HH:mm:ss'), booking.bookingId, booking.name, booking.email, booking.phone, booking.category, booking.service, booking.date, booking.time, booking.duration, booking.amount, booking.paymentMethod, booking.paymentStatus, 'Queued', booking.durationMinutes, 'Confirmed', booking.classId
   ]]);
 
   let emailSent = false;
   try {
     enforceDailyLimit_();
-    MailApp.sendEmail({ to:data.email, subject:'Your Pulse reservation is confirmed — ' + data.bookingId, name:'Pulse Fitness', replyTo:'hassijatanisha@gmail.com', htmlBody:bookingEmail_(data) });
+    MailApp.sendEmail({ to:booking.email, subject:'Your Pulse reservation is confirmed — ' + booking.bookingId, name:'Pulse Fitness', replyTo:'hassijatanisha@gmail.com', htmlBody:bookingEmail_(booking) });
     sheet.getRange(row, 14).setValue('Sent');
     incrementDailyCount_();
     emailSent = true;
   } catch (mailError) {
     sheet.getRange(row, 14).setValue('Failed: ' + String(mailError.message || mailError).slice(0, 180));
   }
-  return { ok:true, bookingId:data.bookingId, emailSent:emailSent };
+  return { ok:true, bookingId:booking.bookingId, amount:booking.amount, paymentStatus:booking.paymentStatus, emailSent:emailSent };
+}
+
+function validatedBooking_(data) {
+  const bookingId = clean_(data.bookingId), name = clean_(data.name), email = clean_(data.email).toLowerCase(), phone = clean_(data.phone);
+  const category = clean_(data.category), service = clean_(data.service), date = clean_(data.date), time = clean_(data.time), classId = clean_(data.classId), promotion = clean_(data.promotion);
+  if (!/^PLS-\d{8,}$/.test(bookingId)) throw new Error('Invalid booking number');
+  if (name.length < 2 || name.length > 120) throw new Error('Invalid name');
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Invalid email');
+  if (!/^[+()\d\s-]{7,30}$/.test(phone)) throw new Error('Invalid phone number');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + 'T12:00:00').getTime())) throw new Error('Invalid booking date');
+  if (date < Utilities.formatDate(new Date(), PULSE_TIMEZONE, 'yyyy-MM-dd')) throw new Error('Booking date is in the past');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('Invalid booking time');
+
+  let amount = 0, durationMinutes = 0, capacity = 0, normalizedClassId = '';
+  if (category === 'Padel') {
+    const settings = settings_(), court = Number((service.match(/^Court (\d+)$/) || [])[1]);
+    if (!Number.isInteger(court) || court < 1 || court > Number(settings.padelCourtCount)) throw new Error('Invalid court');
+    amount = Number(settings.padelCourtPrice);
+    durationMinutes = Number(settings.padelDurationMinutes);
+    if (promotion === 'PULSE20' && Number(time.slice(0, 2)) < 16) amount = Math.round(amount * 0.8);
+  } else if (category === 'Gym' && classId) {
+    const gymClass = gymSchedule_().find(function(item) { return item.id === classId && item.active; });
+    if (!gymClass || gymClass.name !== service || gymClass.date !== date || gymClass.time !== time) throw new Error('That class is no longer available');
+    amount = Number(gymClass.price); capacity = Number(gymClass.capacity); normalizedClassId = gymClass.id;
+  } else {
+    const catalog = BOOKING_CATALOG[category];
+    if (!catalog || !Object.prototype.hasOwnProperty.call(catalog, service)) throw new Error('Invalid service');
+    amount = Number(catalog[service]);
+  }
+
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10000000) throw new Error('Invalid booking amount');
+  const requestedMethod = clean_(data.paymentMethod);
+  const paymentMethod = ['Mobile money','Card','Reception'].indexOf(requestedMethod) >= 0 ? requestedMethod : 'Reception';
+  const paymentStatus = paymentMethod === 'Reception' ? 'Due' : 'Paid (demo)';
+  return { bookingId:bookingId, name:name, email:email, phone:phone, category:category, service:service, date:date, time:time, duration:durationMinutes ? String(durationMinutes) + ' min' : '', durationMinutes:durationMinutes, amount:amount, paymentMethod:paymentMethod, paymentStatus:paymentStatus, classId:normalizedClassId, capacity:capacity };
+}
+
+function classCapacityReached_(sheet, classId, capacity) {
+  if (!classId || capacity < 1 || sheet.getLastRow() < 2) return false;
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, BOOKING_HEADERS.length).getValues().map(bookingFromRow_).filter(function(booking) {
+    return booking.classId === classId && ['Cancelled','No-show','Fee cleared'].indexOf(booking.status) < 0;
+  }).length >= capacity;
 }
 
 function adminLogin_(data) {
@@ -107,6 +152,11 @@ function adminUpdateBooking_(data) {
   if (!row) return { ok:false, error:'Booking not found in the shared database.' };
   const current = bookingFromRow_(sheet.getRange(row, 1, 1, BOOKING_HEADERS.length).getValues()[0]);
   const next = { service:clean_(data.service || current.service), date:clean_(data.date || current.date), time:clean_(data.time || current.time), status:clean_(data.status || current.status), paymentStatus:clean_(data.paymentStatus || current.paymentStatus) };
+  if (!next.service || next.service.length > 120) throw new Error('Invalid service');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next.date) || isNaN(new Date(next.date + 'T12:00:00').getTime())) throw new Error('Invalid booking date');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(next.time)) throw new Error('Invalid booking time');
+  if (['Confirmed','Checked in','Cancelled','No-show','Fee cleared'].indexOf(next.status) < 0) throw new Error('Invalid booking status');
+  if (['Paid','Paid (demo)','Due','Paid at reception','Refunded','Nothing due','No-show fee due'].indexOf(next.paymentStatus) < 0) throw new Error('Invalid payment status');
   if (current.category === 'Padel' && next.status !== 'Cancelled' && bookingConflict_(sheet, next.service, next.date, next.time, current.durationMinutes || 90, current.id)) return { ok:false, conflict:true, error:'That court overlaps another confirmed booking.' };
   sheet.getRange(row, 7).setValue(next.service);
   sheet.getRange(row, 8).setValue(next.date);
@@ -120,7 +170,7 @@ function adminUpdateSettings_(data) {
   requireAdmin_(data.token);
   const next = settings_();
   const price = Number(data.padelCourtPrice), duration = Number(data.padelDurationMinutes);
-  if (!Number.isFinite(price) || price < 0) throw new Error('Invalid court price');
+  if (!Number.isFinite(price) || price < 0 || price > 10000000) throw new Error('Invalid court price');
   if (!Number.isInteger(duration) || duration < 30 || duration > 480 || duration % 15 !== 0) throw new Error('Booking length must be a 15-minute interval from 30 to 480 minutes.');
   next.padelCourtPrice = price;
   next.padelDurationMinutes = duration;
@@ -132,7 +182,11 @@ function adminSaveClass_(data) {
   requireAdmin_(data.token);
   const sheet = classSheet_();
   const record = { id:clean_(data.id || ('GC-' + new Date().getTime())), name:clean_(data.name), date:clean_(data.date), time:clean_(data.time), endTime:clean_(data.endTime), trainer:clean_(data.trainer), capacity:Number(data.capacity || 0), price:Number(data.price || 0), active:String(data.active) === 'true' };
-  if (!record.name || !record.date || !record.time || !record.endTime || !record.trainer || record.capacity < 1 || record.price < 0) throw new Error('Complete every class field.');
+  if (!/^GC-[A-Za-z0-9-]{1,40}$/.test(record.id)) throw new Error('Invalid class ID');
+  if (!record.name || record.name.length > 120 || !record.trainer || record.trainer.length > 120) throw new Error('Invalid class details');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(record.date) || isNaN(new Date(record.date + 'T12:00:00').getTime())) throw new Error('Invalid class date');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(record.time) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(record.endTime)) throw new Error('Invalid class time');
+  if (!Number.isInteger(record.capacity) || record.capacity < 1 || record.capacity > 500 || !Number.isFinite(record.price) || record.price < 0 || record.price > 10000000) throw new Error('Invalid capacity or price');
   const values = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat() : [];
   const index = values.indexOf(record.id);
   const row = index >= 0 ? index + 2 : sheet.getLastRow() + 1;
@@ -242,5 +296,5 @@ function jsonp_(value, callback) {
 function bridgeResponse_(value, requestId) {
   const payload = Object.assign({ source:'pulse-backend', requestId:String(requestId || '') }, value);
   const json = JSON.stringify(payload).replace(/</g,'\\u003c').replace(/<\/script/gi,'<\\/script');
-  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>top.postMessage(' + json + ',"*");<\/script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>top.postMessage(' + json + ',' + JSON.stringify(PULSE_CLIENT_ORIGIN) + ');<\/script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
