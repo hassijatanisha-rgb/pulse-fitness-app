@@ -68,6 +68,7 @@ function uid(prefix="PLS") {
 }
 function escapeHTML(value="") { return String(value).replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
 function activeBooking(b) { return !["Cancelled","No-show","Fee cleared"].includes(b.status); }
+function staffCanCancel(b) { return ["Gym","Stretch"].includes(b.category); }
 function courtNumber(service="") { return String(service).match(/court\s*(\d+)/i)?.[1] || ""; }
 function courtIsBooked(service,date,time,ignoreId="") {
   const court=courtNumber(service);
@@ -276,7 +277,7 @@ function bookingsModal() {
 
 function manageBookingModal(booking) {
   if (!booking) return infoModal("Booking not found", "This booking is no longer available.");
-  const statuses=["Confirmed","Checked in","Cancelled","No-show","Fee cleared"];
+  const statuses=["Confirmed","Checked in",...(staffCanCancel(booking)?["Cancelled"]:[]),"No-show","Fee cleared"];
   const paymentStatuses=["Paid","Due","Paid at reception","Refunded","Nothing due","No-show fee due"];
   return modalShell(`Manage ${booking.id}`, `<form id="manage-booking-form"><input type="hidden" name="id" value="${escapeHTML(booking.id)}"><div class="summary-box"><div class="summary-row"><span>Customer</span><strong>${escapeHTML(booking.name)}</strong></div><div class="summary-row"><span>Contact</span><strong>${escapeHTML(booking.phone)}</strong></div></div><div class="form-grid"><div class="field full"><label>Service</label><input name="service" value="${escapeHTML(booking.service)}" required></div><div class="field"><label>Date</label><input name="date" type="date" value="${booking.date}" required></div><div class="field"><label>Time</label><input name="time" type="time" value="${booking.time}" required></div><div class="field"><label>Status</label><select name="status">${statuses.map(v=>`<option ${v===booking.status?"selected":""}>${v}</option>`).join("")}</select></div><div class="field"><label>Payment status</label><select name="paymentStatus">${paymentStatuses.map(v=>`<option ${v===booking.paymentStatus?"selected":""}>${v}</option>`).join("")}</select></div></div><div class="form-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button><button class="btn btn-primary">Save changes</button></div></form>`);
 }
@@ -360,7 +361,7 @@ function bookingAdmin() {
 
 function bookingTable(rows) {
   if (!rows.length) return `<div class="empty">No bookings match this filter.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>`<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${b.id} · ${b.category}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${b.id}">Email</button><button class="text-link" data-contact="sms" data-id="${b.id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${b.time}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${b.id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${b.id}">Check in</button><button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${b.id}">Cancel</button>`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${b.id}">Collect fee</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Date & time</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map(b=>`<tr><td><div class="cell-main">${escapeHTML(b.service)}</div><div class="cell-sub">${b.id} · ${b.category}</div></td><td><div class="cell-main">${escapeHTML(b.name)}</div><div class="cell-sub">${escapeHTML(b.phone)}</div><div class="contact-actions"><button class="text-link" data-contact="email" data-id="${b.id}">Email</button><button class="text-link" data-contact="sms" data-id="${b.id}">Text</button></div></td><td><div class="cell-main">${prettyDate(b.date)}</div><div class="cell-sub">${b.time}</div></td><td><div class="cell-main">${escapeHTML(b.paymentStatus)}</div><div class="cell-sub">${money(b.amount)}</div></td><td><span class="status ${b.status.toLowerCase().replace("-","")}">${b.status}</span></td><td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-booking-action="manage" data-id="${b.id}">Manage</button>${b.status==="Confirmed"?`<button class="btn btn-ghost btn-sm" data-booking-action="checkin" data-id="${b.id}">Check in</button>${staffCanCancel(b)?`<button class="btn btn-danger btn-sm" data-booking-action="cancel" data-id="${b.id}">Cancel</button>`:""}`:""}${b.status==="Checked in"?`<button class="btn btn-ghost btn-sm" disabled>Admitted</button>`:""}${b.status==="No-show"?`<button class="btn btn-primary btn-sm" data-booking-action="collect" data-id="${b.id}">Collect fee</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function trainerAdmin() {
@@ -414,7 +415,7 @@ function handleAction(action, el, e) {
   if (e) e.preventDefault();
   const data = el?.dataset || {};
   const info = {
-    policy:{title:"Cancellation & no-show policy",body:"Gym and Stretch cancellations require at least 24 hours’ notice. If Pulse cancels a paid session, the refund is processed automatically through Selcom. Padel bookings are not normally cancelled by Pulse. An unpaid no-show creates a fee that must be cleared before another court booking."},
+    policy:{title:"Cancellation & no-show policy",body:"Customer cancellations for Stretch and Padel require at least 24 hours’ notice. Pulse staff may cancel Gym classes and Stretch classes; paid bookings are refunded automatically through Selcom, while unpaid bookings simply close with nothing due. Pulse does not cancel Padel courts. An unpaid Padel no-show creates a fee that must be cleared before another court booking."},
     "checkin-info":{title:"Simple check-in",body:"Your confirmation email contains a unique booking number. Show it at reception, where the team verifies it against the system. If you selected pay on arrival, settle the amount and the team will check you in."},
     offerings:{title:"Everything you need",body:"Pulse combines a fully equipped gym, weekly coached classes, personal training, membership support, recovery-focused Stretch sessions, and bookable Padel courts."},
     notifications:{title:"Notifications",body:"Booking confirmations, trainer decisions, cancellations, and refund updates appear here. Email is the active prototype channel; push notifications are prepared for the production app."}
@@ -522,7 +523,7 @@ function juiceSubmit(e) {
 function customerBookingAction(action,id) {
   const b = state.bookings.find(x=>x.id===id); if(!b || action!=="cancel") return;
   const cutoff = new Date(`${b.date}T${b.time || "00:00"}:00`).getTime() - Date.now();
-  if (cutoff < 24*60*60*1000) return toast("Cancellation unavailable", "Please contact Pulse; online cancellation requires at least 24 hours’ notice.");
+  if (["Stretch","Padel"].includes(b.category) && cutoff < 24*60*60*1000) return toast("Cancellation unavailable", `${b.category} cancellations require at least 24 hours’ notice.`);
   b.status="Cancelled"; b.paymentStatus=b.paymentStatus==="Paid"?"Refunded":"Nothing due";
   state.activities=[{text:`${b.id} cancelled by customer`,time:"Just now"},...state.activities];
   state.modal={type:"bookings"}; saveState(); render(); toast("Booking cancelled",b.paymentStatus==="Refunded"?"Selcom refund recorded.":"No payment was collected.");
@@ -532,7 +533,10 @@ function bookingAction(action,id) {
   const b = state.bookings.find(x=>x.id===id); if(!b) return;
   if(action==="manage") return setState({modal:{type:"manage-booking",data:{id}}},false);
   if(action==="checkin") { b.status="Checked in"; if(b.paymentStatus==="Due") b.paymentStatus="Paid at reception"; toast("Customer checked in", `${b.id} has been verified and admitted.`); }
-  if(action==="cancel") { b.status="Cancelled"; b.paymentStatus=b.paymentStatus==="Paid"?"Refunded":"Nothing due"; toast("Booking cancelled", b.paymentStatus==="Refunded"?"Automatic Selcom refund recorded.":"No payment was collected."); }
+  if(action==="cancel") {
+    if(!staffCanCancel(b)) return toast("Cancellation unavailable","Pulse staff may cancel Gym and Stretch classes, but not Padel courts.");
+    b.status="Cancelled"; b.paymentStatus=b.paymentStatus==="Paid"?"Refunded":"Nothing due"; toast("Booking cancelled", b.paymentStatus==="Refunded"?"Automatic Selcom refund recorded.":"No payment was collected.");
+  }
   if(action==="collect") { b.paymentStatus="Paid at reception"; b.status="Fee cleared"; toast("No-show fee cleared", `${b.name} can book again.`); }
   state.activities=[{text:`${b.id} updated: ${b.status}`,time:"Just now"},...state.activities]; saveState(); render();
 }
@@ -541,6 +545,7 @@ function manageBookingSubmit(e) {
   e.preventDefault();
   const fields=Object.fromEntries(new FormData(e.target).entries());
   const b=state.bookings.find(x=>x.id===fields.id); if(!b) return;
+  if(fields.status==="Cancelled" && !staffCanCancel(b)) return toast("Cancellation unavailable","Pulse does not cancel Padel courts.");
   Object.assign(b,{service:fields.service,date:fields.date,time:fields.time,status:fields.status,paymentStatus:fields.paymentStatus});
   state.activities=[{text:`${b.id} edited by admin`,time:"Just now"},...state.activities];
   state.modal=null; saveState(); render(); toast("Booking updated",`${b.id} changes have been saved.`);
